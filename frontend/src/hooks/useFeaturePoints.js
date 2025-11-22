@@ -1,82 +1,107 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 
-/**
- * initialValues: { featureName: { value: 0..1, enabled: boolean } }
- * backendUrl: backend endpoint for generating new values
- */
 export function useFeaturePoints(initialValues, backendUrl, debounceTime = 5000) {
   const [features, setFeatures] = useState(initialValues);
   const [progress, setProgress] = useState(0);
+
   const timerRef = useRef(null);
   const progressRef = useRef(null);
+  const previousRef = useRef(initialValues); // <-- store last version for diff
 
-  // Call backend
-  const updateBackend = useCallback(async (featuresToSend) => {
-    try {
-      const response = await fetch(backendUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ features: featuresToSend }),
-      });
-      const data = await response.json();
-      if (data.features) {
-        // Merge backend values with local enabled flags
-        setFeatures(prev => {
-          const merged = {};
-          for (const key of Object.keys(prev)) {
-            merged[key] = {
-              value: data.features[key]?.value ?? prev[key].value,
-              enabled: prev[key].enabled // keep local lock state
-            };
-          }
-          return merged;
-        });
+  // Compare previous and current → returns list of changed feature names
+  const getChangedFeatures = (prev, curr) => {
+    const changed = [];
+    for (const key of Object.keys(curr)) {
+      if (prev[key].value !== curr[key].value || prev[key].enabled !== curr[key].enabled) {
+        changed.push(key);
       }
-      setProgress(0);
-    } catch (err) {
-      console.error("Backend update failed:", err);
     }
-  }, [backendUrl]);
+    return changed;
+  };
 
-  // Debounce logic
-const startDebounce = useCallback(() => {
-  if (timerRef.current) clearTimeout(timerRef.current);
-  if (progressRef.current) clearInterval(progressRef.current);
+  // Backend call
+  const updateBackend = useCallback(
+    async (newFeatures) => {
+      const prev = previousRef.current;
+      const changedKeys = getChangedFeatures(prev, newFeatures);
 
-  setProgress(0);
-  let elapsed = 0;
-
-  progressRef.current = setInterval(() => {
-    elapsed += 100;
-    setProgress(Math.min(100, (elapsed / debounceTime) * 100));
-  }, 100);
-
-  timerRef.current = setTimeout(() => {
-    setFeatures(prevFeatures => {
-      const featuresToSend = {};
-      for (const key in prevFeatures) {
-        featuresToSend[key] = {
-          value: prevFeatures[key].value,
-          enabled: prevFeatures[key].enabled
+      // Build payload:
+      // - send all features
+      // - BUT for changed ones → set enabled=false ONLY IN PAYLOAD
+      const payload = {};
+      for (const key of Object.keys(newFeatures)) {
+        const wasChanged = changedKeys.includes(key);
+        payload[key] = {
+          value: newFeatures[key].value,
+          enabled: wasChanged ? false : newFeatures[key].enabled,
         };
       }
 
-      updateBackend(featuresToSend);
-      return prevFeatures; // don't change state here
-    });
+      try {
+        const response = await fetch(backendUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ features: payload }),
+        });
 
-    clearInterval(progressRef.current);
-    progressRef.current = null;
-    timerRef.current = null;
-    setProgress(0);
-  }, debounceTime);
-}, [debounceTime, updateBackend]);
+        const data = await response.json();
 
-  // Update value → triggers backend
+        if (data.features) {
+          // merge backend values but keep local enabled flags
+          setFeatures((prevLocal) => {
+            const merged = {};
+            for (const key of Object.keys(prevLocal)) {
+              merged[key] = {
+                value: data.features[key]?.value ?? prevLocal[key].value,
+                enabled: prevLocal[key].enabled, // don't touch the UI lock status
+              };
+            }
+            return merged;
+          });
+
+          // Update previous snapshot AFTER backend accepted it
+          previousRef.current = newFeatures;
+        }
+
+        setProgress(0);
+      } catch (err) {
+        console.error("Backend update failed:", err);
+      }
+    },
+    [backendUrl]
+  );
+
+  // Debounce
+  const startDebounce = useCallback(
+    (updatedState) => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (progressRef.current) clearInterval(progressRef.current);
+
+      setProgress(0);
+      let elapsed = 0;
+
+      progressRef.current = setInterval(() => {
+        elapsed += 100;
+        setProgress(Math.min(100, (elapsed / debounceTime) * 100));
+      }, 100);
+
+      timerRef.current = setTimeout(() => {
+        updateBackend(updatedState);
+
+        clearInterval(progressRef.current);
+        progressRef.current = null;
+        timerRef.current = null;
+        setProgress(0);
+      }, debounceTime);
+    },
+    [debounceTime, updateBackend]
+  );
+
+  // Updating a feature value triggers debounce
   const updateFeatureValue = useCallback(
-    (featureName, value) => {
-      setFeatures(prev => {
-        const next = { ...prev, [featureName]: { ...prev[featureName], value } };
+    (name, value) => {
+      setFeatures((prev) => {
+        const next = { ...prev, [name]: { ...prev[name], value } };
         startDebounce(next);
         return next;
       });
@@ -84,16 +109,13 @@ const startDebounce = useCallback(() => {
     [startDebounce]
   );
 
-  // Toggle enabled → frontend only
-  const toggleFeatureEnabled = useCallback(
-    (featureName) => {
-      setFeatures(prev => ({
-        ...prev,
-        [featureName]: { ...prev[featureName], enabled: !prev[featureName].enabled }
-      }));
-    },
-    []
-  );
+  // Only local UI toggle
+  const toggleFeatureEnabled = useCallback((name) => {
+    setFeatures((prev) => ({
+      ...prev,
+      [name]: { ...prev[name], enabled: !prev[name].enabled },
+    }));
+  }, []);
 
   useEffect(() => {
     return () => {

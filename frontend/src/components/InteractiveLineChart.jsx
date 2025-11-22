@@ -1,13 +1,14 @@
+// InteractiveLineChart.jsx
 import React, { useRef } from "react";
 
 export default function InteractiveLineChart({
   features = {},
   onValueChange,
   onToggleEnabled,
-  width = 800,
+  width = 800, // now controlled by parent
   height = 240,
   padding = 50,
-  smooth = true
+  smooth = true,
 }) {
   const svgRef = useRef(null);
   const activeRef = useRef({ key: null, pointerId: null });
@@ -73,79 +74,63 @@ export default function InteractiveLineChart({
   };
 
   return (
-    <svg
-      ref={svgRef}
-      width={width}
-      height={height}
-      style={{ background: "white", borderRadius: "8px", border: "1px solid #ccc" }}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-    >
-      {/* Horizontal grid lines */}
-      {[0, 0.25, 0.5, 0.75, 1].map((t, i) => (
-        <line
-          key={i}
-          x1={padding}
-          x2={width - padding}
-          y1={padding + t * innerH}
-          y2={padding + t * innerH}
-          stroke="#eee"
-        />
-      ))}
-
-      {/* Line path */}
-      <path d={pathD} fill="none" stroke="#2563eb" strokeWidth={2} strokeLinecap="round" />
-
-      {/* Points */}
-      {coords.map(c => (
-        <g key={c.key} transform={`translate(${c.x},${c.y})`}>
-          <circle
-            r={16}
-            fill="transparent"
-            style={{ cursor: c.enabled ? "ns-resize" : "not-allowed" }}
-            onPointerDown={e => c.enabled && onPointerDown(e, c.key)}
+    <div>
+      <svg
+        ref={svgRef}
+        width={width}
+        height={height}
+        style={{ background: "white", borderRadius: "8px", border: "1px solid #ccc" }}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        {/* Horizontal grid lines */}
+        {[0, 0.25, 0.5, 0.75, 1].map((t, i) => (
+          <line
+            key={i}
+            x1={padding}
+            x2={width - padding}
+            y1={padding + t * innerH}
+            y2={padding + t * innerH}
+            stroke="#eee"
           />
-          <circle
-            r={6}
-            fill={c.enabled ? "#2563eb" : "#aaa"}
-            stroke="white"
-            strokeWidth={2}
-          />
-          <text
-            y={-12}
-            textAnchor="middle"
-            fontSize="10"
-            fill="#333"
+        ))}
+
+        {/* Line path */}
+        <path d={pathD} fill="none" stroke="#2563eb" strokeWidth={2} strokeLinecap="round" />
+
+        {/* Points */}
+        {coords.map((c) => (
+          <g key={c.key} transform={`translate(${c.x},${c.y})`}>
+            <circle
+              r={16}
+              fill="transparent"
+              style={{ cursor: c.enabled ? "ns-resize" : "not-allowed" }}
+              onPointerDown={(e) => c.enabled && onPointerDown(e, c.key)}
+            />
+            <circle r={6} fill={c.enabled ? "#2563eb" : "#aaa"} stroke="white" strokeWidth={2} />
+            <text y={-12} textAnchor="middle" fontSize="10" fill="#333">
+              {c.key} ({Math.round(c.value * 100)}%)
+            </text>
+          </g>
+        ))}
+
+        {/* Lock/unlock icons */}
+        {coords.map((c) => (
+          <g
+            key={c.key + "_icon"}
+            transform={`translate(${c.x},${height - 20})`}
+            style={{ cursor: "pointer" }}
+            onClick={() => onToggleEnabled && onToggleEnabled(c.key)}
           >
-            {c.key} ({Math.round(c.value * 100)}%)
-          </text>
-        </g>
-      ))}
-
-      {/* X-axis lock/unlock icons */}
-      {coords.map(c => (
-        <g key={c.key + "_icon"} transform={`translate(${c.x},${height - 20})`} style={{ cursor: "pointer" }}
-           onClick={() => onToggleEnabled && onToggleEnabled(c.key)}>
-          {c.enabled ? (
-            // Unlock icon
-            <path
-              d="M4 12V8a4 4 0 118 0v4M4 12h8v8H4z"
-              fill="none"
-              stroke="#2563eb"
-              strokeWidth="2"
-            />
-          ) : (
-            // Lock icon
-            <path
-              d="M4 12V8a4 4 0 018 0v4M4 12h8v8H4z"
-              fill="none"
-              stroke="#aaa"
-              strokeWidth="2"
-            />
-          )}
-        </g>
-      ))}
-    </svg>
+            {c.enabled ? (
+              <path d="M4 12V8a4 4 0 118 0v4M4 12h8v8H4z" fill="none" stroke="#2563eb" strokeWidth="2" />
+            ) : (
+              <path d="M4 12V8a4 4 0 018 0v4M4 12h8v8H4z" fill="none" stroke="#aaa" strokeWidth="2" />
+            )}
+          </g>
+        ))}
+      </svg>
+    </div>
   );
 }
