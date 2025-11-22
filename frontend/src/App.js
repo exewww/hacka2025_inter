@@ -1,60 +1,35 @@
-import React from 'react';
-import InputBox from './components/InputBox';
-import OutputDisplay from './components/OutputDisplay';
-import { useInteractiveText } from './hooks/useInteractiveText';
-import InteractiveLineChart from './components/InteractiveLineChart';
+import React from "react";
+import InteractiveLineChart from "./components/InteractiveLineChart";
+import { useFeaturePoints } from "./hooks/useFeaturePoints";
 
 function App() {
-  // 🕒 change 5 to any number of seconds you want
-  const { text, setText, output, progress, isWaiting } = useInteractiveText(
-    'Sentence 1. Sentence 2. Sentence 3.',
-    5
-  );
+  const initialFeatures = {
+    Feature1: { value: 0.6, enabled: true },
+    Feature2: { value: 0.4, enabled: false },
+    Feature3: { value: 0.7, enabled: false },
+    Feature4: { value: 0.2, enabled: false },
+    Feature5: { value: 0.5, enabled: true },
+    Feature6: { value: 0.8, enabled: true },
+  };
+
+  const { features, updateFeatureValue, toggleFeatureEnabled, progress } =
+    useFeaturePoints(initialFeatures, "http://localhost:5000/generate");
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'flex-start',
-        gap: '20px',
-        padding: '40px',
-      }}
-    >
-      <InputBox
-        text={text}
-        onChange={setText}
-        progress={progress}
-        isWaiting={isWaiting}
-      />
+    <div style={{ padding: "40px" }}>
+      <h2>Interactive Diagram</h2>
 
-      {/* Output + Diagram stacked vertically */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          flex: 1,
-          gap: '20px',
-        }}
-      >
-        <OutputDisplay output={output} />
-        {/* NEW → Interactive Line Diagram */}
-        <div
-          style={{
-            padding: '20px',
-            border: '1px solid #ccc',
-            borderRadius: '8px',
-          }}
-        >
-          <h3 style={{ marginBottom: '10px' }}>Interactive Diagram</h3>
-          <InteractiveLineChart
-            width={700}
-            height={260}
-            points={[0.6, 0.4, 0.7, 0.2, 0.5, 0.8]}
-          />
-        </div>
+      <div style={{ marginBottom: "10px", height: "8px", width: "700px", background: "#eee", borderRadius: "4px" }}>
+        <div style={{ width: `${progress}%`, height: "100%", background: "#2563eb", borderRadius: "4px", transition: "width 0.1s linear" }} />
       </div>
+
+      <InteractiveLineChart
+        width={700}
+        height={260}
+        features={features}
+        onValueChange={updateFeatureValue}
+        onToggleEnabled={toggleFeatureEnabled}
+      />
     </div>
   );
 }

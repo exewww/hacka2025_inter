@@ -1,23 +1,19 @@
-import openai
-import os
-from dotenv import load_dotenv
+import random
 
-load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
-"""
-def generate_text(prompt: str):
-    response = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
-    return response.choices[0].message.content
-"""
-def generate_text(prompt: str):
-    # Mocked behavior for testing without API calls
-    prompt = prompt.strip()
-    if prompt.endswith("."):
-        # Insert before the last period
-        return f"{prompt[:-1]} (requested and changed)."
-    else:
-        # Append at the end
-        return f"{prompt} (requested and changed)"
+def generate_text(features):
+    """
+    Randomly adjust each feature value ±0.3.
+    Locked features (enabled=False) are not changed.
+    """
+    new_features = {}
+    for key, val in features.items():
+        enabled = val.get("enabled", True)
+        value = val.get("value", 0)
+
+        if enabled:
+            delta = random.uniform(-0.3, 0.3)
+            value = max(0, min(1, value + delta))
+
+        new_features[key] = {"value": value, "enabled": enabled}
+
+    return new_features
