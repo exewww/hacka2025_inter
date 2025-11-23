@@ -1,16 +1,14 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo } from 'react';
 
 export default function InteractiveTimeLineChart({
-  milestones = [], // Defines Vertical Separators & Zones
-  seriesData = [], // Defines the Line Path & Points
+  milestones = [], 
+  seriesData = [], 
   width = 800,
   height = 400,
   padding = 60,
   smooth = true,
 }) {
   const [hoveredPoint, setHoveredPoint] = useState(null);
-  
-  // NEW: Track which vertical milestone line is being hovered
   const [hoveredMilestoneIdx, setHoveredMilestoneIdx] = useState(null);
 
   const innerW = width - padding * 2;
@@ -21,7 +19,7 @@ export default function InteractiveTimeLineChart({
   // -------------------------------------------------------
   const getMonthIndex = (dateStr) => {
     if (!dateStr) return 0;
-    const parts = dateStr.split("/");
+    const parts = dateStr.split('/');
     const m = parseInt(parts[0], 10);
     let y = parseInt(parts[1], 10);
     if (y < 100) y += 2000;
@@ -32,7 +30,7 @@ export default function InteractiveTimeLineChart({
     const year = Math.floor(idx / 12);
     const month = (idx % 12) + 1;
     if (showMonths) {
-      const mStr = month.toString().padStart(2, "0");
+      const mStr = month.toString().padStart(2, '0');
       const yStr = year.toString().slice(-2);
       return `${mStr}/${yStr}`;
     }
@@ -40,7 +38,7 @@ export default function InteractiveTimeLineChart({
   };
 
   const formatCurrency = (val) => {
-    if (val === undefined || val === null) return "€0";
+    if (val === undefined || val === null) return '€0';
     if (Math.abs(val) >= 1000000) return `€${(val / 1000000).toFixed(1)}M`;
     if (Math.abs(val) >= 1000) return `€${(val / 1000).toFixed(0)}k`;
     return `€${val}`;
@@ -49,25 +47,21 @@ export default function InteractiveTimeLineChart({
   // -------------------------------------------------------
   // 2. PREPARE DATA
   // -------------------------------------------------------
-
-  // A. Sort Series Data (The Line)
   const sortedSeries = useMemo(() => {
     return [...seriesData].sort(
       (a, b) => getMonthIndex(a.date) - getMonthIndex(b.date)
     );
   }, [seriesData]);
 
-  // B. Sort Milestones (The Vertical Lines)
   const sortedMilestones = useMemo(() => {
     return [...milestones].sort(
       (a, b) => getMonthIndex(a.time) - getMonthIndex(b.time)
     );
   }, [milestones]);
 
-  // C. Determine Chart Range (Start -> End)
   const rangeInfo = useMemo(() => {
     if (sortedSeries.length === 0 && sortedMilestones.length === 0)
-      return { startIdx: 0, endIdx: 0, span: 1, mode: "year" };
+      return { startIdx: 0, endIdx: 0, span: 1, mode: 'year' };
 
     const seriesDates = sortedSeries.map((d) => getMonthIndex(d.date));
     const milestoneDates = sortedMilestones.map((m) => getMonthIndex(m.time));
@@ -77,7 +71,7 @@ export default function InteractiveTimeLineChart({
     const endIdx = Math.max(...allIndices);
     const diffMonths = endIdx - startIdx;
     const span = Math.max(diffMonths, 1);
-    const mode = diffMonths < 24 ? "month" : "year";
+    const mode = diffMonths < 24 ? 'month' : 'year';
 
     return { startIdx, endIdx, span, mode };
   }, [sortedSeries, sortedMilestones]);
@@ -87,13 +81,10 @@ export default function InteractiveTimeLineChart({
   // -------------------------------------------------------
   // 3. SCALING
   // -------------------------------------------------------
-
-  // Y-Axis
   const allCapitals = sortedSeries.map((d) => d.capital);
   const minCapital = allCapitals.length ? Math.min(...allCapitals) : 0;
   const maxCapital = allCapitals.length ? Math.max(...allCapitals) : 0;
 
-  // Buffer for Y-Axis
   const yMin = minCapital - Math.abs(minCapital * 0.1 || 1000);
   const yMax = maxCapital + Math.abs(maxCapital * 0.1 || 1000);
   const capitalRange = yMax - yMin || 1;
@@ -114,15 +105,12 @@ export default function InteractiveTimeLineChart({
   // -------------------------------------------------------
   // 4. GEOMETRY GENERATION
   // -------------------------------------------------------
-
-  // A. SERIES LINE POINTS
   const linePoints = sortedSeries.map((d) => ({
     ...d,
     x: getX(d.date),
     y: getY(d.capital),
   }));
 
-  // B. MILESTONE VERTICAL LINES
   const milestoneLines = sortedMilestones.map((m) => ({
     ...m,
     x: getX(m.time),
@@ -130,22 +118,18 @@ export default function InteractiveTimeLineChart({
     idx: getMonthIndex(m.time),
   }));
 
-  // C. BACKGROUND ZONES
   const zones = [];
-  
   if (milestoneLines.length > 0 && milestoneLines[0].idx > startIdx) {
-     zones.push({
-        x: getXForIndex(startIdx),
-        width: milestoneLines[0].x - getXForIndex(startIdx),
-        difficulty: 0 
-     });
+    zones.push({
+      x: getXForIndex(startIdx),
+      width: milestoneLines[0].x - getXForIndex(startIdx),
+      difficulty: 0,
+    });
   }
-
   for (let i = 0; i < milestoneLines.length; i++) {
     const current = milestoneLines[i];
     const next = milestoneLines[i + 1];
     const endX = next ? next.x : getXForIndex(endIdx);
-    
     zones.push({
       x: current.x,
       width: endX - current.x,
@@ -153,9 +137,8 @@ export default function InteractiveTimeLineChart({
     });
   }
 
-  // D. PATH BUILDER
   const buildPath = (pts) => {
-    if (pts.length === 0) return "";
+    if (pts.length === 0) return '';
     if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`;
 
     let d = `M ${pts[0].x} ${pts[0].y}`;
@@ -183,11 +166,10 @@ export default function InteractiveTimeLineChart({
   const areaD =
     linePoints.length > 0
       ? `${pathD} L ${linePoints[linePoints.length - 1].x} ${height - padding} L ${linePoints[0].x} ${height - padding} Z`
-      : "";
+      : '';
 
-  // E. TICKS
   const gridTicks = [];
-  if (mode === "month") {
+  if (mode === 'month') {
     const step = span > 12 ? 3 : 1;
     for (let i = startIdx; i <= endIdx; i += step) {
       gridTicks.push({ value: i, label: formatIndexToLabel(i, true) });
@@ -207,59 +189,54 @@ export default function InteractiveTimeLineChart({
   // 5. RENDER
   // -------------------------------------------------------
   return (
-    <div style={{ position: "relative", width, fontFamily: "sans-serif" }}>
-      
-      {/* TOOLTIP - Uses Series Data */}
+    <div style={{ position: 'relative', width, fontFamily: 'sans-serif' }}>
+      {/* TOOLTIP */}
       {hoveredPoint && (
         <div
           style={{
-            position: "absolute",
+            position: 'absolute',
             left: hoveredPoint.x,
             top: hoveredPoint.y - 15,
-            transform: "translate(-50%, -100%)",
-            backgroundColor: "rgba(255, 255, 255, 0.95)",
-            border: "1px solid #e5e7eb",
-            borderRadius: "8px",
-            padding: "12px",
-            boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+            transform: 'translate(-50%, -100%)',
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            border: '1px solid #e5e7eb',
+            borderRadius: '8px',
+            padding: '12px',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
             zIndex: 50,
-            minWidth: "200px",
-            pointerEvents: "none",
+            minWidth: '200px',
+            pointerEvents: 'none',
           }}
         >
-          <div style={{ fontWeight: "bold", fontSize: "13px", color: "#111", marginBottom: "4px" }}>
-             {hoveredPoint.date}
+          <div style={{ fontWeight: 'bold', fontSize: '13px', color: '#111', marginBottom: '4px' }}>
+            {hoveredPoint.date}
           </div>
-
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px", fontSize: "12px" }}>
-            <span style={{color: "#666"}}>Balance:</span>
-            <span style={{ fontWeight: "700", color: hoveredPoint.capital < 0 ? "#dc2626" : "#2563eb" }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '12px' }}>
+            <span style={{ color: '#666' }}>Balance:</span>
+            <span style={{ fontWeight: '700', color: hoveredPoint.capital < 0 ? '#dc2626' : '#2563eb' }}>
               {formatCurrency(hoveredPoint.capital)}
             </span>
           </div>
-
           {hoveredPoint.impact_value !== 0 && hoveredPoint.impact_value !== undefined && (
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-               <span style={{color: "#666"}}>One-time:</span>
-               <span style={{ fontWeight: "600", color: hoveredPoint.impact_value > 0 ? "#16a34a" : "#dc2626" }}>
-                  {hoveredPoint.impact_value > 0 ? "+" : ""}
-                  {formatCurrency(hoveredPoint.impact_value)}
-               </span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+              <span style={{ color: '#666' }}>One-time:</span>
+              <span style={{ fontWeight: '600', color: hoveredPoint.impact_value > 0 ? '#16a34a' : '#dc2626' }}>
+                {hoveredPoint.impact_value > 0 ? '+' : ''}
+                {formatCurrency(hoveredPoint.impact_value)}
+              </span>
             </div>
           )}
-          
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", marginTop: "2px" }}>
-             <span style={{color: "#666"}}>Monthly:</span>
-             <span style={{ fontWeight: "500", color: "#4b5563" }}>
-                {hoveredPoint.monthly_flow > 0 ? "+" : ""}
-                {formatCurrency(hoveredPoint.monthly_flow)}
-             </span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginTop: '2px' }}>
+            <span style={{ color: '#666' }}>Monthly:</span>
+            <span style={{ fontWeight: '500', color: '#4b5563' }}>
+              {hoveredPoint.monthly_flow > 0 ? '+' : ''}
+              {formatCurrency(hoveredPoint.monthly_flow)}
+            </span>
           </div>
-
           {hoveredPoint.event && (
-              <div style={{marginTop: "8px", paddingTop: "8px", borderTop: "1px solid #eee", fontSize: "11px", fontStyle: "italic", color: "#555"}}>
-                  "{hoveredPoint.event}"
-              </div>
+            <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #eee', fontSize: '11px', fontStyle: 'italic', color: '#555' }}>
+              "{hoveredPoint.event}"
+            </div>
           )}
         </div>
       )}
@@ -267,7 +244,11 @@ export default function InteractiveTimeLineChart({
       <svg
         width={width}
         height={height}
-        style={{ background: "white", borderRadius: "12px", border: "1px solid #e5e7eb" }}
+        style={{
+          background: 'white',
+          borderRadius: '12px',
+          border: '1px solid #e5e7eb',
+        }}
       >
         <defs>
           <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
@@ -279,7 +260,7 @@ export default function InteractiveTimeLineChart({
           </linearGradient>
         </defs>
 
-        {/* 1. BACKGROUND ZONES */}
+        {/* 1. BACKGROUND ZONES (Colors based on Difficulty) */}
         {zones.map((z, i) => (
           <rect
             key={`zone-${i}`}
@@ -288,7 +269,8 @@ export default function InteractiveTimeLineChart({
             width={z.width}
             height={innerH}
             fill={getColorForDifficulty(z.difficulty)}
-            opacity={0.15}
+            // Opacity leicht erhöht, damit die Farben auch bei hellen Tönen erkennbar sind
+            opacity={0.3} 
           />
         ))}
 
@@ -305,7 +287,7 @@ export default function InteractiveTimeLineChart({
             </g>
           );
         })}
-        
+
         {gridTicks.map((tick) => {
           const px = getXForIndex(tick.value);
           return (
@@ -318,120 +300,113 @@ export default function InteractiveTimeLineChart({
           );
         })}
 
-        {/* 3. MILESTONE SEPARATORS (Interactive) */}
+        {/* 3. MILESTONES */}
         {milestoneLines.map((m, i) => {
-            const isHovered = hoveredMilestoneIdx === i;
-            return (
-                <g 
-                    key={`milestone-line-${i}`}
-                    onMouseEnter={() => setHoveredMilestoneIdx(i)}
-                    onMouseLeave={() => setHoveredMilestoneIdx(null)}
-                    style={{ cursor: 'pointer' }}
-                >
-                    {/* Invisible Hit Area (Wider than the line to capture mouse events easily) */}
-                    <rect 
-                        x={m.x - 20} 
-                        y={padding} 
-                        width={40} 
-                        height={innerH} 
-                        fill="transparent" 
-                    />
-
-                    {/* Visible Line */}
-                    <line 
-                        x1={m.x} x2={m.x} 
-                        y1={padding - 10} y2={height - padding} 
-                        stroke={isHovered ? "#4f46e5" : "#6366f1"} 
-                        strokeWidth={isHovered ? 2 : 1.5} 
-                        strokeDasharray={isHovered ? "" : "6 4"} 
-                        opacity={isHovered ? 1 : 0.6}
-                    />
-
-                    {/* Conditional Label */}
-                    {isHovered && (
-                        <g pointerEvents="none">
-                            <rect 
-                                x={m.x - (m.milestone.length * 4) - 8} 
-                                y={padding - 35} 
-                                width={(m.milestone.length * 8) + 16} 
-                                height={24} 
-                                rx={4} 
-                                fill="rgba(255, 255, 255, 0.95)"
-                                stroke="#4f46e5"
-                                strokeWidth={1}
-                            />
-                            <text 
-                                x={m.x} 
-                                y={padding - 19} 
-                                fontSize="12" 
-                                fontWeight="bold" 
-                                fill="#4f46e5"
-                                textAnchor="middle"
-                            >
-                                {m.milestone}
-                            </text>
-                        </g>
-                    )}
-
-                    {/* Start Flag/Circle */}
-                    <circle cx={m.x} cy={padding} r={isHovered ? 5 : 3} fill="#6366f1" />
+          const isHovered = hoveredMilestoneIdx === i;
+          return (
+            <g
+              key={`milestone-line-${i}`}
+              onMouseEnter={() => setHoveredMilestoneIdx(i)}
+              onMouseLeave={() => setHoveredMilestoneIdx(null)}
+              style={{ cursor: 'pointer' }}
+            >
+              <rect x={m.x - 20} y={padding} width={40} height={innerH} fill="transparent" />
+              <line
+                x1={m.x}
+                x2={m.x}
+                y1={padding - 10}
+                y2={height - padding}
+                stroke={isHovered ? '#4f46e5' : '#6366f1'}
+                strokeWidth={isHovered ? 2 : 1.5}
+                strokeDasharray={isHovered ? '' : '6 4'}
+                opacity={isHovered ? 1 : 0.6}
+              />
+              {isHovered && (
+                <g pointerEvents="none">
+                  <rect
+                    x={m.x - m.milestone.length * 4 - 8}
+                    y={padding - 35}
+                    width={m.milestone.length * 8 + 16}
+                    height={24}
+                    rx={4}
+                    fill="rgba(255, 255, 255, 0.95)"
+                    stroke="#4f46e5"
+                    strokeWidth={1}
+                  />
+                  <text x={m.x} y={padding - 19} fontSize="12" fontWeight="bold" fill="#4f46e5" textAnchor="middle">
+                    {m.milestone}
+                  </text>
                 </g>
-            );
+              )}
+              <circle cx={m.x} cy={padding} r={isHovered ? 5 : 3} fill="#6366f1" />
+            </g>
+          );
         })}
 
-        {/* 4. DATA LINE & AREA */}
+        {/* 4. DATA LINE */}
         <path d={areaD} fill="url(#lineGradient)" stroke="none" />
         <path d={pathD} fill="none" stroke="#2563eb" strokeWidth="3" strokeLinecap="round" filter="url(#shadow)" />
 
-        {/* 5. INTERACTIVE POINTS */}
-        {linePoints.map((p, i) => {
-            return (
-                <g
-                    key={`pt-${i}`}
-                    transform={`translate(${p.x}, ${p.y})`}
-                    onMouseEnter={() => setHoveredPoint(p)}
-                    onMouseLeave={() => setHoveredPoint(null)}
-                    style={{ cursor: "pointer" }}
-                >
-                    <circle r={12} fill="transparent" />
-                    {(p.event || hoveredPoint === p) && (
-                        <circle 
-                            r={hoveredPoint === p ? 6 : 4} 
-                            fill="white" 
-                            stroke={p.event ? "#2563eb" : "#93c5fd"} 
-                            strokeWidth={2} 
-                        />
-                    )}
-                </g>
-            );
-        })}
+        {/* 5. POINTS */}
+        {linePoints.map((p, i) => (
+          <g
+            key={`pt-${i}`}
+            transform={`translate(${p.x}, ${p.y})`}
+            onMouseEnter={() => setHoveredPoint(p)}
+            onMouseLeave={() => setHoveredPoint(null)}
+            style={{ cursor: 'pointer' }}
+          >
+            <circle r={12} fill="transparent" />
+            {(p.event || hoveredPoint === p) && (
+              <circle
+                r={hoveredPoint === p ? 6 : 4}
+                fill="white"
+                stroke={p.event ? '#2563eb' : '#93c5fd'}
+                strokeWidth={2}
+              />
+            )}
+          </g>
+        ))}
 
-        {/* Zero Line */}
         {yMin < 0 && yMax > 0 && (
-           <line 
-             x1={padding} 
-             x2={width - padding} 
-             y1={getY(0)} 
-             y2={getY(0)} 
-             stroke="#000" 
-             strokeOpacity={0.2} 
-             strokeWidth={1} 
-           />
+          <line
+            x1={padding}
+            x2={width - padding}
+            y1={getY(0)}
+            y2={getY(0)}
+            stroke="#000"
+            strokeOpacity={0.2}
+            strokeWidth={1}
+          />
         )}
-
       </svg>
     </div>
   );
 }
 
-// Helper: Color scale
+// -------------------------------------------------------
+// NEUE FARBLOGIK (SIGMOID / S-KURVE)
+// -------------------------------------------------------
 function getColorForDifficulty(d) {
+  // 1. Wert sicherstellen zwischen 0 und 1
   const val = Math.max(0, Math.min(1, d || 0));
-  if (val < 0.5) {
-    const t = val * 2; 
-    return `rgb(${34 + (250 - 34) * t}, ${197 + (204 - 197) * t}, ${94 + (21 - 94) * t})`;
-  } else {
-    const t = (val - 0.5) * 2;
-    return `rgb(${250 + (220 - 250) * t}, ${204 + (38 - 204) * t}, ${21 + (38 - 21) * t})`;
-  }
+
+  // 2. Steilheit der Kurve (k).
+  // Je höher k, desto enger ist der Übergang um 0.5.
+  // k=15 sorgt dafür, dass 0.4 noch sehr grün und 0.6 schon sehr rot ist.
+  const k = 15;
+  
+  // 3. Sigmoid Funktion zentriert bei 0.5
+  // Ergebnis (sigmoid) ist nahezu 0 für val < 0.4
+  // Ergebnis (sigmoid) ist nahezu 1 für val > 0.6
+  const sigmoid = 1 / (1 + Math.exp(-k * (val - 0.5)));
+
+  // 4. Mapping auf Hue (Farbton):
+  // 0 (Easy) -> 120 (Grün)
+  // 1 (Hard) -> 0 (Rot)
+  const hue = (1 - sigmoid) * 120;
+
+  // 5. Rückgabe HSL
+  // Saturation: 90% (leuchtend), Lightness: 40% (gut sichtbar aber nicht neon)
+  return `hsl(${hue}, 90%, 40%)`;
 }

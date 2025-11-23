@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect } from 'react';
 
 export function useInitialFeatures(backendUrl) {
   // Hard-coded fallback values
@@ -29,15 +29,15 @@ export function useInitialFeatures(backendUrl) {
 
       try {
         const response = await fetch(`${backendUrl}/initial_features`);
-        if (!response.ok) throw new Error("Failed to load initial features");
+        if (!response.ok) throw new Error('Failed to load initial features');
 
         const data = await response.json();
         if (data.features) {
           setFeatures(data.features);
-          console.log("Fetched initial features:", data.features);
+          console.log('Fetched initial features:', data.features);
         }
       } catch (err) {
-        console.error("Error loading initial features:", err);
+        console.error('Error loading initial features:', err);
         setError(err);
       } finally {
         setLoading(false);

@@ -1,7 +1,12 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 // Added onFeaturesUpdated parameter
-export function useFeaturePoints(initialValues, backendUrl, onFeaturesUpdated, debounceTime = 2000) {
+export function useFeaturePoints(
+  initialValues,
+  backendUrl,
+  onFeaturesUpdated,
+  debounceTime = 2000
+) {
   const [features, setFeatures] = useState(initialValues);
   const [progress, setProgress] = useState(0);
 
@@ -13,7 +18,7 @@ export function useFeaturePoints(initialValues, backendUrl, onFeaturesUpdated, d
     async (newFeatures) => {
       const prevSnapshot = previousRef.current;
       const payload = {};
-      
+
       for (const key of Object.keys(newFeatures)) {
         payload[key] = {
           value: newFeatures[key].value,
@@ -22,12 +27,12 @@ export function useFeaturePoints(initialValues, backendUrl, onFeaturesUpdated, d
         };
       }
 
-      console.log("🚀 Sending payload to backend:", payload);
+      console.log('🚀 Sending payload to backend:', payload);
 
       try {
         const response = await fetch(backendUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ features: payload }),
         });
 
@@ -43,21 +48,21 @@ export function useFeaturePoints(initialValues, backendUrl, onFeaturesUpdated, d
                 enabled: prevLocal[key].enabled,
               };
             }
-            
+
             previousRef.current = merged;
-            
+
             // --- NEW: Trigger the external callback (Generate Milestones) ---
             if (onFeaturesUpdated) {
-               onFeaturesUpdated(merged);
+              onFeaturesUpdated(merged);
             }
-            
+
             return merged;
           });
         }
 
         setProgress(0);
       } catch (err) {
-        console.error("Backend update failed:", err);
+        console.error('Backend update failed:', err);
         setProgress(0);
       }
     },

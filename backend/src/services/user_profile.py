@@ -1,14 +1,14 @@
 personal_info = {
-    "Age": 32,
+    "Age": 21,
     "Marital Status": "single",
-    "Job Status": "employed",
-    "Profession": "Senior Project Manager",
+    "Job Status": "Student",
+    "Profession": "Student",
     "Industry": "Tech/IT",
     "Sex": "female",
     "Goal": "primary residence",
     "Children Wish": 2,
     "Net Monthly Income": 4250.0,         # Bleibt wichtig für "Affordability Check" (Kreditwürdigkeit)
-    "Bonus/Variable Income (Annual)": 5000.0,
+    "Bonus/Variable Income (Annual)": 500.0,
     # GELÖSCHT: "Total Savings / Equity": 75000.0
     "Credit Score Rating": "very good",
     "Existing Real Estate": False
@@ -23,10 +23,10 @@ dream_property_features = {
     "Public Transport Access": "good",
     "School District Quality": "medium",
     "Amenities": "balcony, elevator",
-    "Max Purchase Price": 580000.0,
+    "Max Purchase Price": 50000.0,
     "Condition": "modernized",
-    "Energy Efficiency Class": "C",
-    "Construction Year": "post-1990"
+    "Energy Efficiency Class": "F",
+    "Construction Year": "post-1900"
 }
 
 current_fixed_expenses = {
@@ -71,7 +71,7 @@ plot_features = {
         "enabled": True
     },
     "Initial Capital": {  # ehemals Anfangskapital
-        "value": 0.9,
+        "value": 0.3,
         "previous_value": 0.9,
         "enabled": True
     },
