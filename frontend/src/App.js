@@ -31,9 +31,8 @@ const Dashboard = memo(({ initialFeatures, backendUrl }) => {
 
   // 4. Define Callback: Triggered ONLY when Chart interaction finishes
   const handleFeaturesUpdated = useCallback((updatedFeatures) => {
-    // CRITICAL FIX: Prevent the chart from triggering an update BEFORE 
-    // the initialization useEffect has run. This ensures we strictly follow
-    // "Initialization -> Then User Interaction" order.
+    // Prevent the chart from triggering an update BEFORE 
+    // the initialization useEffect has run.
     if (!hasInitialized.current) return;
 
     console.log("Plot changed (user interaction), regenerating milestones...");
@@ -57,12 +56,18 @@ const Dashboard = memo(({ initialFeatures, backendUrl }) => {
       // Mark as done. Now the handleFeaturesUpdated callback is allowed to run.
       hasInitialized.current = true;
     }
-    // Disable deps check to ensure this strictly runs only on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
 
-  // 7. Calculate Start Capital
-  const startCapital = (features.InitialCapital?.value || 0) * 1000000; 
+  // 7. Calculate Start Capital (FIXED)
+  // Checks multiple key variations (with space, without space, camelCase)
+  const rawCapital = 
+    features["Initial Capital"]?.value || 
+    features["InitialCapital"]?.value || 
+    features["initialCapital"]?.value || 
+    0;
+
+  const startCapital = rawCapital * 1000000; 
 
   // 8. Initialize Suggestion Hook
   const [suggestion, requestSuggestion] = useSuggestion(

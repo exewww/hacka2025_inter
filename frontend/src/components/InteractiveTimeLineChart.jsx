@@ -1,9 +1,7 @@
 import React, { useState, useMemo } from "react";
 
 export default function InteractiveTimeLineChart({
-  milestones = [],   
-  initialCapital = 0, 
-  startYear = 2025, // <--- Passed from App.js
+  milestones = [],
   width = 800,
   height = 400,
   padding = 60,
@@ -14,93 +12,140 @@ export default function InteractiveTimeLineChart({
   const innerW = width - padding * 2;
   const innerH = height - padding * 2;
 
-  // 1. Sort Milestones Chronologically
-  const sortedUserMilestones = useMemo(() => {
-    return [...milestones].sort((a, b) => {
-      const [ma, ya] = a.time.split("/");
-      const [mb, yb] = b.time.split("/");
-      const dateA = (2000 + parseInt(ya)) * 12 + parseInt(ma);
-      const dateB = (2000 + parseInt(yb)) * 12 + parseInt(mb);
-      return dateA - dateB;
-    });
-  }, [milestones]);
-
   // -------------------------------------------------------
-  // 2. DYNAMIC ENDPOINT CALCULATION
+  // 1. HELPER: DATE MATH (Total Months)
   // -------------------------------------------------------
-  
-  // The chart ends at the year of the last milestone.
-  const endYear = useMemo(() => {
-    if (sortedUserMilestones.length === 0) return startYear + 1;
+  // Converts "11/2025" or "11/25" into a single integer (Total Months)
+  // e.g. Year 2025 * 12 + 11
+  const getMonthIndex = (dateStr) => {
+    if (!dateStr) return 0;
+    const parts = dateStr.split("/");
+    const m = parseInt(parts[0], 10);
+    let y = parseInt(parts[1], 10);
+    // Handle 2-digit years (e.g., 25 -> 2025)
+    if (y < 100) y += 2000;
     
-    const lastM = sortedUserMilestones[sortedUserMilestones.length - 1];
-    const [, yStr] = lastM.time.split("/");
-    const yVal = 2000 + parseInt(yStr, 10);
-    
-    // Ensure we have at least a 1-year span
-    return Math.max(startYear + 1, yVal);
-  }, [sortedUserMilestones, startYear]);
-
-  // Generate the Years for the Grid (Start -> End)
-  const gridYears = useMemo(() => {
-    const arr = [];
-    for (let y = startYear; y <= endYear; y++) {
-      arr.push(y);
-    }
-    return arr;
-  }, [startYear, endYear]);
-
-  // 3. Construct Start Point
-  const startYearShort = startYear.toString().slice(-2); 
-  const startPointObj = {
-    time: `01/${startYearShort}`,
-    milestone: "Start",
-    difficulty: 0, 
-    reason: "Initial Capital available",
-    capital: initialCapital,
-    isStartNode: true,
+    return y * 12 + (m - 1); // 0-indexed months for easier math
   };
 
-  const allPointsData = [startPointObj, ...sortedUserMilestones];
+  // Converts Total Months back to label
+  // e.g. index -> "11/25" or "2025" depending on mode
+  const formatIndexToLabel = (idx, showMonths) => {
+    const year = Math.floor(idx / 12);
+    const month = (idx % 12) + 1;
+    
+    if (showMonths) {
+      const mStr = month.toString().padStart(2, "0");
+      const yStr = year.toString().slice(-2);
+      return `${mStr}/${yStr}`;
+    } else {
+      return `${year}`;
+    }
+  };
 
-  // 4. Y-Axis Scaling (Capital)
-  const allCapitals = allPointsData.map((m) => m.capital);
-  const minCapital = Math.min(...allCapitals) * 0.8; 
+  // -------------------------------------------------------
+  // 2. PROCESS DATA
+  // -------------------------------------------------------
+
+  // A. Sort Milestones Chronologically
+  const sortedPoints = useMemo(() => {
+    if (!milestones || milestones.length === 0) return [];
+    return [...milestones].sort((a, b) => {
+      return getMonthIndex(a.time) - getMonthIndex(b.time);
+    }).map((m, i) => ({
+      ...m,
+      // Mark the chronologically first point as the Start Node
+      isStartNode: i === 0 
+    }));
+  }, [milestones]);
+
+  // B. Determine Range (Start -> End)
+  const rangeInfo = useMemo(() => {
+    if (sortedPoints.length === 0) return { startIdx: 0, endIdx: 0, span: 1, mode: "year" };
+
+    const startIdx = getMonthIndex(sortedPoints[0].time);
+    const endIdx = getMonthIndex(sortedPoints[sortedPoints.length - 1].time);
+    
+    // Calculate difference in months
+    const diffMonths = endIdx - startIdx;
+    
+    // Ensure span is at least 1 to avoid division by zero
+    const span = Math.max(diffMonths, 1);
+
+    // LOGIC: If less than 24 months (2 years), show Month Grid. Else show Year Grid.
+    const mode = diffMonths < 24 ? "month" : "year";
+
+    return { startIdx, endIdx, span, mode };
+  }, [sortedPoints]);
+
+  const { startIdx, endIdx, span, mode } = rangeInfo;
+
+  // -------------------------------------------------------
+  // 3. GENERATE GRID TICKS
+  // -------------------------------------------------------
+  const gridTicks = useMemo(() => {
+    const ticks = [];
+
+    if (mode === "month") {
+      // MONTH MODE: Show ticks every X months depending on density
+      // If span is tiny (e.g. 6 months), show every month.
+      // If span is 23 months, show every 3 months to prevent overcrowding.
+      const step = span > 12 ? 3 : 1; 
+
+      // Align to the start index
+      for (let i = startIdx; i <= endIdx; i += step) {
+        ticks.push({ 
+          value: i, 
+          label: formatIndexToLabel(i, true) 
+        });
+      }
+
+    } else {
+      // YEAR MODE: Show ticks for every Jan 1st within the range
+      // 1. Find the first January that falls on or after startIdx
+      const startYear = Math.floor(startIdx / 12);
+      const endYear = Math.floor(endIdx / 12);
+
+      for (let y = startYear; y <= endYear; y++) {
+        const janIdx = y * 12; // Index for January of year y
+        // Only add if it's within visual bounds (or close enough)
+        if (janIdx >= startIdx && janIdx <= endIdx) {
+          ticks.push({ value: janIdx, label: y.toString() });
+        }
+      }
+      // Optional: If Start Point isn't Jan 1, maybe force a label for the Start Year? 
+      // For now, standard year grid lines are usually cleaner.
+    }
+    return ticks;
+  }, [startIdx, endIdx, span, mode]);
+
+
+  // -------------------------------------------------------
+  // 4. SCALING FUNCTIONS
+  // -------------------------------------------------------
+
+  // Y-Axis (Capital)
+  const allCapitals = sortedPoints.map((m) => m.capital);
+  const minCapital = Math.min(...allCapitals) * 0.9; 
   const maxCapital = Math.max(...allCapitals) * 1.1; 
   const capitalRange = maxCapital - minCapital || 1;
 
-  // -------------------------------------------------------
-  // HELPER FUNCTIONS
-  // -------------------------------------------------------
+  const getY = (val) => {
+    const ratio = (val - minCapital) / capitalRange;
+    return padding + (1 - ratio) * innerH;
+  };
 
-  const getXForDate = (dateStr) => {
-    if (!dateStr) return padding;
-    const [monthStr, yearStr] = dateStr.split("/");
-    const month = parseInt(monthStr, 10);
-    const year = 2000 + parseInt(yearStr, 10);
-
-    const yearDelta = year - startYear;
-    const monthFraction = (month - 1) / 12;
-    
-    // X-Axis Scaling Logic:
-    // We treat the span as (endYear - startYear). 
-    // To ensure points in the final year (e.g. Dec 2027) fit, we map the end of endYear to the width.
-    // If Grid is 2025, 2026, 2027. Span is 2 years (2025->2027).
-    // If a point is in 2027, it falls on the last line.
-    
-    // Calculate total integer years in the chart
-    const totalSegments = Math.max(1, endYear - startYear);
-    
-    // Calculate ratio
-    const ratio = (yearDelta + monthFraction) / totalSegments;
-    
+  const getX = (dateStr) => {
+    const currentIdx = getMonthIndex(dateStr);
+    const ratio = (currentIdx - startIdx) / span;
     const px = padding + ratio * innerW;
     return Math.max(padding, Math.min(width - padding, px));
   };
 
-  const getYForCapital = (val) => {
-    const ratio = (val - minCapital) / capitalRange;
-    return padding + (1 - ratio) * innerH;
+  const getXForTick = (idxValue) => {
+    const ratio = (idxValue - startIdx) / span;
+    const px = padding + ratio * innerW;
+    return px;
   };
 
   const formatCurrency = (val) => {
@@ -110,49 +155,37 @@ export default function InteractiveTimeLineChart({
   };
 
   // -------------------------------------------------------
-  // RENDER HELPERS
+  // 5. RENDER OBJECTS
   // -------------------------------------------------------
 
-  const points = allPointsData.map((m) => ({
+  const points = sortedPoints.map((m) => ({
     ...m,
-    x: getXForDate(m.time),
-    y: getYForCapital(m.capital),
+    x: getX(m.time),
+    y: getY(m.capital),
   }));
 
   const zones = [];
   for (let i = 0; i < points.length - 1; i++) {
     const pStart = points[i];
     const pEnd = points[i + 1];
-    const zoneWidth = pEnd.x - pStart.x;
-    
-    if (zoneWidth > 0) {
-      zones.push({
-        x: pStart.x,
-        width: zoneWidth,
-        difficulty: pEnd.difficulty, 
-      });
-    }
-  }
-  
-  // Fill remaining space to the right
-  const lastPointX = points[points.length - 1].x;
-  if (lastPointX < width - padding) {
     zones.push({
-      x: lastPointX,
-      width: (width - padding) - lastPointX,
-      difficulty: 0, 
+      x: pStart.x,
+      width: pEnd.x - pStart.x,
+      difficulty: pEnd.difficulty,
     });
   }
 
+  // Path Builder
   const buildPath = (pts) => {
     if (pts.length === 0) return "";
     if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`;
 
     let d = `M ${pts[0].x} ${pts[0].y}`;
     if (!smooth) {
-        pts.forEach((p, i) => { if(i>0) d+= ` L ${p.x} ${p.y}` });
-        return d;
+      pts.forEach((p, i) => { if (i > 0) d += ` L ${p.x} ${p.y}`; });
+      return d;
     }
+    // Cubic Bezier Smoothing
     for (let i = 0; i < pts.length - 1; i++) {
       const p0 = pts[i - 1] || pts[i];
       const p1 = pts[i];
@@ -169,7 +202,9 @@ export default function InteractiveTimeLineChart({
   };
 
   const linePath = buildPath(points);
-  const areaPath = `${linePath} L ${points[points.length-1].x} ${height - padding} L ${points[0].x} ${height - padding} Z`;
+  const areaPath = points.length > 0 
+    ? `${linePath} L ${points[points.length-1].x} ${height - padding} L ${points[0].x} ${height - padding} Z`
+    : "";
 
   return (
     <div style={{ position: "relative", width: width, fontFamily: "sans-serif" }}>
@@ -203,7 +238,7 @@ export default function InteractiveTimeLineChart({
               {hoveredPoint.reason}
             </div>
           )}
-          {!hoveredPoint.isStartNode && (
+          {!hoveredPoint.isStartNode && hoveredPoint.difficulty !== undefined && (
             <div style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
                 <div style={{ flex: 1, height: "6px", background: "#f3f4f6", borderRadius: "3px", overflow: "hidden" }}>
                     <div style={{ width: `${hoveredPoint.difficulty * 100}%`, background: getColorForDifficulty(hoveredPoint.difficulty), height: "100%" }}></div>
@@ -229,12 +264,12 @@ export default function InteractiveTimeLineChart({
           </linearGradient>
         </defs>
 
-        {/* ZONES */}
+        {/* ZONES (Background Coloring) */}
         {zones.map((z, i) => (
           <rect key={`zone-${i}`} x={z.x} y={padding} width={z.width} height={innerH} fill={getColorForDifficulty(z.difficulty)} opacity={0.12} />
         ))}
 
-        {/* CAPITAL GRID (Horizontal) */}
+        {/* HORIZONTAL GRID (Capital) */}
         {[0, 0.25, 0.5, 0.75, 1].map((t) => {
           const yVal = padding + t * innerH;
           const capitalVal = maxCapital - t * capitalRange;
@@ -248,27 +283,27 @@ export default function InteractiveTimeLineChart({
           );
         })}
 
-        {/* YEAR GRID (Vertical) */}
-        {gridYears.map((year) => {
-           // Calculate ratio for grid lines
-           const ratio = (year - startYear) / (endYear - startYear || 1);
-           const xPos = padding + ratio * innerW;
-           
+        {/* VERTICAL GRID (Time) - Dynamic Years or Months */}
+        {gridTicks.map((tick) => {
+           const xPos = getXForTick(tick.value);
+           // Prevent drawing outside the chart area
+           if (xPos < padding - 1 || xPos > width - padding + 1) return null;
+
            return (
-             <g key={`vgrid-${year}`}>
+             <g key={`vgrid-${tick.value}`}>
                <line x1={xPos} x2={xPos} y1={padding} y2={height - padding} stroke="#f3f4f6" strokeDasharray="4 4" />
                <text x={xPos} y={height - padding + 24} textAnchor="middle" fontSize="12" fontWeight="bold" fill="#6b7280">
-                 {year}
+                 {tick.label}
                </text>
              </g>
            )
         })}
 
-        {/* PATHS */}
+        {/* DATA LINES & AREA */}
         <path d={areaPath} fill="url(#lineGradient)" stroke="none" />
         <path d={linePath} fill="none" stroke="#3b82f6" strokeWidth="3" strokeLinecap="round" filter="url(#shadow)" />
 
-        {/* POINTS */}
+        {/* DATA POINTS */}
         {points.map((p, i) => (
           <g
             key={`pt-${i}`}
@@ -294,7 +329,7 @@ export default function InteractiveTimeLineChart({
 }
 
 function getColorForDifficulty(d) {
-  const val = Math.max(0, Math.min(1, d));
+  const val = Math.max(0, Math.min(1, d || 0));
   if (val < 0.5) {
     const t = val * 2;
     return `rgb(${34 + (234-34)*t}, ${197 + (179-197)*t}, ${94 + (8-94)*t})`;

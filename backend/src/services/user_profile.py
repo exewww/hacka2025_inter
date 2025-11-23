@@ -1,31 +1,48 @@
 personal_info = {
-    "Age": 22,
+    "Age": 32,
     "Marital Status": "single",
     "Job Status": "employed",
+    "Profession": "Senior Project Manager",
+    "Industry": "Tech/IT",
     "Sex": "female",
     "Goal": "primary residence",
-    "Children Wish": 2
+    "Children Wish": 2,
+    "Net Monthly Income": 4250.0,         # Bleibt wichtig für "Affordability Check" (Kreditwürdigkeit)
+    "Bonus/Variable Income (Annual)": 5000.0,
+    # GELÖSCHT: "Total Savings / Equity": 75000.0
+    "Credit Score Rating": "very good",
+    "Existing Real Estate": False
 }
 
 dream_property_features = {
     "Location": "Berlin",
+    "District Preference": "Prenzlauer Berg, Mitte, or Kreuzberg",
     "Property Type": "apartment",
-    "Size": 85,
+    # GELÖSCHT: "Size": 85
+    "Rooms": 3.5,
     "Public Transport Access": "good",
     "School District Quality": "medium",
-    "Amenities": "balcony"
+    "Amenities": "balcony, elevator",
+    "Max Purchase Price": 580000.0,
+    "Condition": "modernized",
+    "Energy Efficiency Class": "C",
+    "Construction Year": "post-1990"
 }
 
 current_fixed_expenses = {
-    "Monthly Rent/Mortgage": 1200,
-    "Utilities": 250,
-    "Insurance": 120,
-    "Loan Payments": 300,
-    "Subscriptions": 45
+"Monthly Rent/Mortgage": 1200.0,      # Fällt beim Kauf weg (wird durch Rate ersetzt)
+"Utilities": 250.0,                   # Heizung, Strom, Wasser
+"Insurance": 120.0,                   # Haftpflicht, BU, Hausrat
+"Loan Payments": 300.0,               # Laufender Kredit (z.B. Auto oder Studienkredit)
+"Subscriptions": 45.0,                # Netflix, Spotify, Gym
+# FINANZ-ADD-ONS (Wichtig für Haushaltsrechnung):
+"Groceries & Household": 450.0,       # Essen, Drogerie
+"Internet & Phone": 60.0,
+"Public Transport / Mobility": 80.0,  # BVG Ticket oder Tanken
+"Leisure & Vacation Savings": 300.0   # Puffer für Urlaub/Freizeit
 }
 
- 
-"""# Enabled true means the user can changed. it is not fixed.
+# Enabled true means the user can changed. it is not fixed.
 # Normalized to 0-1
 plot_features = {
     "Risk Tolerance": {
@@ -73,4 +90,4 @@ plot_features = {
         "previous_value": 0.9,
         "enabled": True
     }
-}"""
+}
