@@ -1,12 +1,20 @@
-// useSuggestion.js
 import { useState, useCallback } from "react";
-export function useSuggestion(initialText, url, features) {
+
+export function useSuggestion(initialText, url, features, milestones, letterRef) {
   const [suggestion, setSuggestion] = useState(initialText);
 
   const requestSuggestion = useCallback(
     async (clickedFeature) => {
       try {
-        const payload = { clickedFeature, features };
+        // Access the current value of the letter from the Ref
+        const currentLetter = letterRef.current || "";
+
+        const payload = { 
+            clickedFeature, 
+            features, 
+            milestones,       // Send Milestones
+            letter: currentLetter // Send Letter
+        };
 
         const res = await fetch(`${url}/generate_suggestion`, {
           method: "POST",
@@ -22,7 +30,9 @@ export function useSuggestion(initialText, url, features) {
         console.error("Suggestion fetch failed", err);
       }
     },
-    [features, url]
+    // We add milestones and letterRef to dependencies. 
+    // Note: refs don't trigger re-renders, but we need it in the dependency array or closure.
+    [features, url, milestones, letterRef] 
   );
 
   return [suggestion, requestSuggestion];

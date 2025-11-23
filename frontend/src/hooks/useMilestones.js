@@ -35,5 +35,11 @@ export function useMilestones(backendUrl) {
     }
   }, [backendUrl]);
 
-  return { milestones, fetchMilestones, isLoadingMilestones, error };
+  return { 
+    milestones, 
+    setMilestones, // <--- ✅ ADDED THIS: Allows Dashboard to update state from Polling
+    fetchMilestones, 
+    isLoadingMilestones, 
+    error 
+  };
 }

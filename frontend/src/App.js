@@ -10,69 +10,184 @@ import { useSuggestion } from "./hooks/useSuggestion";
 import { useInitialFeatures } from "./hooks/useInitialFeatures"; 
 import { useMilestones } from "./hooks/useMilestones"; 
 
-// --- INNER COMPONENT (Wrapped in memo) ---
+// --- STYLES ---
+const styles = {
+  container: {
+    display: "flex",
+    width: "100%",
+    height: "100vh",
+    backgroundColor: "#f3f4f6", 
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    overflow: "hidden",
+  },
+  loadingOverlay: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#ffffff",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 9999,
+  },
+  loadingText: {
+    marginTop: "20px",
+    fontSize: "1.5rem",
+    color: "#4b5563",
+    fontWeight: "300",
+    animation: "pulse 2s infinite",
+  },
+  panel: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "15px",
+    padding: "20px",
+    height: "100%",
+    boxSizing: "border-box",
+  },
+  card: {
+    backgroundColor: "white",
+    borderRadius: "12px",
+    boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+    padding: "16px",
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden", 
+  },
+  resizer: {
+    width: "8px",
+    cursor: "col-resize",
+    backgroundColor: "#e5e7eb",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    transition: "background 0.2s",
+  },
+  roadmapList: {
+    listStyle: "none",
+    padding: 0,
+    margin: 0,
+    overflowY: "auto",
+    flex: 1, 
+  },
+  roadmapItem: {
+    display: "flex",
+    alignItems: "baseline",
+    padding: "8px 0",
+    borderBottom: "1px solid #f3f4f6",
+    fontSize: "14px",
+    color: "#374151",
+  },
+  dateBadge: {
+    backgroundColor: "#eff6ff",
+    color: "#2563eb",
+    padding: "2px 8px",
+    borderRadius: "4px",
+    fontWeight: "600",
+    fontSize: "12px",
+    marginRight: "10px",
+    minWidth: "60px",
+    textAlign: "center",
+  }
+};
+
+// --- INNER COMPONENT ---
 const Dashboard = memo(({ initialFeatures, backendUrl }) => {
-  
   const START_YEAR = 2025;
 
   // UI State
   const [inputValue, setInputValue] = useState("");
-  
-  // ✅ NEW STATE: Detailed Capital Series Data
   const [capitalSeries, setCapitalSeries] = useState([]); 
 
   const inputValueRef = useRef(inputValue);
   useEffect(() => { inputValueRef.current = inputValue; }, [inputValue]);
 
-  // Initialize Milestones Hook
-  const { milestones, fetchMilestones, isLoadingMilestones } = useMilestones(backendUrl);
+  // 1. Initialize Milestones Hook
+  const { milestones, setMilestones, fetchMilestones, isLoadingMilestones } = useMilestones(backendUrl);
 
   const hasInitialized = useRef(false);
 
+  // Callback when user drags points on the top chart
   const handleFeaturesUpdated = useCallback((updatedFeatures) => {
     if (!hasInitialized.current) return;
-    console.log("Plot changed (user interaction), regenerating milestones...");
+    console.log("Features changed, regenerating milestones...");
     fetchMilestones(inputValueRef.current, updatedFeatures);
   }, [fetchMilestones]);
 
-  const { features, updateFeatureValue, toggleFeatureEnabled, progress } =
+  const { features, updateFeatureValue, toggleFeatureEnabled } =
     useFeaturePoints(
       initialFeatures, 
       `${backendUrl}/generate`, 
       handleFeaturesUpdated 
     );
 
-  // 1. Initial Data Fetch
+  // ============================================================
+  // 🔥 POLLING: Check if Telegram Bot sent new data
+  // ============================================================
   useEffect(() => {
-    if (!hasInitialized.current) {
-      console.log("Initial Milestone Generation (One-time on mount)...");
-      fetchMilestones(inputValueRef.current, features);
-      hasInitialized.current = true;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); 
+    const intervalId = setInterval(async () => {
+      try {
+        const res = await fetch(`${backendUrl}/check_for_updates`);
+        const data = await res.json();
 
-  // ✅ NEW: 2. Fetch Capital Series whenever Milestones change
+        // Check if there is an update object
+        if (data.update) {
+          console.log("🤖 Received Bot Update:", data.update);
+          
+          // --- 1. APPEND TEXT TO LETTER ---
+          if (data.update.user_text) {
+            setInputValue((prev) => {
+              // If the box was empty, just set the new text
+              if (!prev) return data.update.user_text;
+              
+              // If it had text, add a double newline + the new text
+              // (Check if the new text is not already inside to avoid duplicates if you want)
+              if (prev.includes(data.update.user_text)) return prev;
+
+              return prev + "\n\n" + data.update.user_text;
+            });
+          }
+
+          // --- 2. UPDATE MILESTONES ---
+          if (data.update.milestones) {
+            setMilestones(data.update.milestones);
+          }
+        }
+      } catch (error) {
+        // Silently fail if backend is offline
+      }
+    }, 2000); 
+
+    return () => clearInterval(intervalId);
+  }, [backendUrl, setMilestones]);
+
+
+  // ============================================================
+  // 🔥 CHAIN REACTION: When Milestones change -> Recalc Capital
+  // ============================================================
   useEffect(() => {
     if (milestones.length > 0) {
+      console.log("Milestones updated, fetching new Capital Series/Charts...");
+      
       const fetchCapitalData = async () => {
         try {
           const response = await fetch(`${backendUrl}/generate_capital_series`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              features: features,
-              milestones: milestones,
+              features: features,       
+              milestones: milestones,   
               letter: inputValueRef.current,
-              
             })
           });
+          
+          if (!response.ok) throw new Error("Capital calc failed");
           const data = await response.json();
           
           if(data.capital_series) {
-            // ✅ LOG DATA HERE to verify format and values
-            console.log("📊 Capital Series Data Received:", data.capital_series);
-            
             setCapitalSeries(data.capital_series);
           }
         } catch (e) {
@@ -81,160 +196,174 @@ const Dashboard = memo(({ initialFeatures, backendUrl }) => {
       };
       fetchCapitalData();
     }
-  }, [milestones, features, backendUrl]);
+  }, [milestones, features, backendUrl]); 
 
-  // Suggestion Hook
+
+  // Initial Load
+  useEffect(() => {
+    if (!hasInitialized.current) {
+      fetchMilestones(inputValueRef.current, features);
+      hasInitialized.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); 
+
+  // Suggestion Logic
   const [suggestion, requestSuggestion] = useSuggestion(
-    "Click on a point to get specific advice...",
+    "Click on a point or timeline event to get AI advice...",
     backendUrl,
-    features
+    features,
+    milestones,    
+    inputValueRef  
   );
 
-  // Layout / Resizing Logic
-  const [leftWidth, setLeftWidth] = useState(40); 
+  // Layout & Resizing Logic
+  const [leftWidth, setLeftWidth] = useState(35); // Percentage
   const containerRef = useRef(null);
-  const isDragging = useRef(false);
-  const [chartWidth, setChartWidth] = useState(600);
-  const chartHeight = 300;
+  const [chartWidth, setChartWidth] = useState(800);
+  const isResizing = useRef(false);
 
-  const handleSendClick = () => {
-    fetchMilestones(inputValue, features);
-  };
-
+  // Update chart width when container resizes
   useEffect(() => {
-    const updateSize = () => {
-      if (!containerRef.current) return;
-      const w = containerRef.current.offsetWidth;
-      const leftPx = (leftWidth / 100) * w;
-      const rightPx = w - leftPx - 10; 
-      setChartWidth(Math.max(rightPx, 300)); 
+    const updateWidth = () => {
+      if (containerRef.current) {
+        const totalW = containerRef.current.offsetWidth;
+        const rightW = totalW * ((100 - leftWidth) / 100) - 60; 
+        setChartWidth(Math.max(400, rightW));
+      }
     };
-    updateSize();
-    window.addEventListener("resize", updateSize);
-    return () => window.removeEventListener("resize", updateSize);
+    window.addEventListener("resize", updateWidth);
+    updateWidth();
+    return () => window.removeEventListener("resize", updateWidth);
   }, [leftWidth]);
 
-  const onMouseMove = (e) => {
-    if (!isDragging.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    let pct = ((e.clientX - rect.left) / rect.width) * 100;
-    pct = Math.max(20, Math.min(60, pct)); 
-    setLeftWidth(pct);
-  };
+  const startResizing = useCallback(() => { isResizing.current = true; }, []);
+  const stopResizing = useCallback(() => { isResizing.current = false; }, []);
+  const resize = useCallback((e) => {
+    if (isResizing.current && containerRef.current) {
+      const newWidth = (e.clientX / containerRef.current.offsetWidth) * 100;
+      if (newWidth > 20 && newWidth < 60) {
+        setLeftWidth(newWidth);
+      }
+    }
+  }, []);
 
-  const onMouseUp = () => {
-    isDragging.current = false;
-    window.removeEventListener("mousemove", onMouseMove);
-    window.removeEventListener("mouseup", onMouseUp);
-  };
-
-  const onMouseDown = () => {
-    isDragging.current = true;
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-  };
+  useEffect(() => {
+    window.addEventListener("mousemove", resize);
+    window.addEventListener("mouseup", stopResizing);
+    return () => {
+      window.removeEventListener("mousemove", resize);
+      window.removeEventListener("mouseup", stopResizing);
+    };
+  }, [resize, stopResizing]);
 
   return (
-    <div style={{ display: "flex", width: "100%", height: "100%", gap: "10px" }} ref={containerRef}>
+    <div ref={containerRef} style={styles.container}>
       
-      {/* --- LEFT PANEL --- */}
-      <div style={{ width: `${leftWidth}%`, display: "flex", flexDirection: "column", gap: "15px", overflow: "hidden" }}>
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "10px", overflowY: "auto" }}>
-          <div style={{ minHeight: "100px" }}>
-            <OutputBox value={suggestion} />
-          </div>
-          
-          {milestones.length > 0 && (
-            <div style={{ border: "1px solid #ddd", borderRadius: "6px", padding: "10px", background: "#f9fafb", fontSize: "14px" }}>
-              <h4 style={{ margin: "0 0 10px 0", color: "#333" }}>Your Roadmap:</h4>
-              <ul style={{ paddingLeft: "20px", margin: 0 }}>
-                {milestones.map((m, i) => (
-                  <li key={i} style={{ marginBottom: "8px" }}>
-                    <strong>{m.time}</strong>: {m.milestone} <br/>
-                    <span style={{ color: "#666", fontSize: "12px" }}>(Diff: {m.difficulty})</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+      {/* LEFT PANEL */}
+      <div style={{ ...styles.panel, width: `${leftWidth}%` }}>
+        
+        {/* 1. Output Box (Top) */}
+        <div style={{ ...styles.card, flex: "0 0 auto", minHeight: "150px" }}>
+          <h4 style={{ margin: "0 0 10px 0", color: "#6b7280" }}>AI Assistant</h4>
+          <OutputBox value={suggestion} />
         </div>
-        <div style={{ height: "180px", flexShrink: 0 }}>
-          <InputBox 
+
+        {/* 2. Roadmap (Middle - Flexible Height) */}
+        {milestones.length > 0 && (
+          <div style={{ ...styles.card, flex: "1 1 auto", minHeight: "200px" }}>
+             <h4 style={{ margin: "0 0 10px 0", color: "#6b7280", borderBottom: "1px solid #eee", paddingBottom: "8px" }}>
+               Life Roadmap
+             </h4>
+             <ul style={styles.roadmapList}>
+               {milestones.map((m, i) => (
+                 <li key={i} style={styles.roadmapItem}>
+                   <span style={styles.dateBadge}>{m.time}</span>
+                   <span>{m.milestone}</span>
+                 </li>
+               ))}
+             </ul>
+          </div>
+        )}
+
+        {/* 3. Input Box (Bottom) */}
+        <div style={{ ...styles.card, flex: "0 0 auto", height: "180px" }}>
+           <h4 style={{ margin: "0 0 10px 0", color: "#6b7280" }}>Your Context (Letter)</h4>
+           <InputBox 
             value={inputValue} 
             onChange={setInputValue} 
-            onSend={handleSendClick}         
+            onSend={() => fetchMilestones(inputValue, features)}         
             isLoading={isLoadingMilestones}  
           />
         </div>
       </div>
 
-      {/* --- DIVIDER --- */}
-      <div onMouseDown={onMouseDown} style={{ width: "5px", cursor: "col-resize", background: "#e5e7eb", borderRadius: "2px" }} />
+      {/* DRAGGER */}
+      <div style={styles.resizer} onMouseDown={startResizing}>
+        <div style={{ width: "4px", height: "40px", backgroundColor: "#cbd5e1", borderRadius: "2px" }} />
+      </div>
 
-      {/* --- RIGHT PANEL --- */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "20px", overflow: "hidden" }}>
-        <div style={{ height: "6px", background: "#eee", borderRadius: "3px", width: "100%" }}>
-          <div style={{ width: `${progress}%`, height: "100%", background: "#2563eb", borderRadius: "3px", transition: "width 0.2s ease-out" }} />
+      {/* RIGHT PANEL */}
+      <div style={{ ...styles.panel, flex: 1, overflowY: "auto" }}>
+        
+        {/* Features Chart */}
+        <div style={{ ...styles.card, minHeight: "350px", justifyContent: 'center' }}>
+          <InteractiveLineChart
+            width={chartWidth}
+            height={300}
+            features={features}
+            onValueChange={updateFeatureValue}
+            onToggleEnabled={toggleFeatureEnabled}
+            onPointClick={requestSuggestion}
+          />
         </div>
 
-        {/* Top Chart (Feature Sliders) */}
-        <InteractiveLineChart
-          width={chartWidth}
-          height={chartHeight}
-          features={features}
-          onValueChange={updateFeatureValue}
-          onToggleEnabled={toggleFeatureEnabled}
-          onPointClick={requestSuggestion}
-        />
-
-        {/* Bottom Chart (Financial Roadmap) */}
-        <InteractiveTimeLineChart
-          width={chartWidth}
-          height={chartHeight}
-          startYear={START_YEAR}
-          
-          milestones={milestones}      // Fallback / Annotation data
-          seriesData={capitalSeries}   // ✅ PASS DETAILED SERIES
-          
-          onValueChange={updateFeatureValue} 
-          onToggleEnabled={toggleFeatureEnabled}
-          onPointClick={requestSuggestion} 
-        />
+        {/* Financial Roadmap Chart */}
+        <div style={{ ...styles.card, minHeight: "350px", justifyContent: 'center' }}>
+          <InteractiveTimeLineChart
+            width={chartWidth}
+            height={300}
+            startYear={START_YEAR}
+            milestones={milestones}
+            seriesData={capitalSeries}
+            onValueChange={updateFeatureValue}
+            onToggleEnabled={toggleFeatureEnabled}
+            onPointClick={requestSuggestion}
+          />
+        </div>
       </div>
     </div>
   );
 });
 
-// --- MAIN APP COMPONENT ---
+// Main App Wrapper
 function App() {
   const backendUrl = "http://localhost:5000";
-  const { features: loadedFeatures, loading, error } = useInitialFeatures(backendUrl);
+  const { features, loading, error } = useInitialFeatures(backendUrl);
 
+  // --- LOADING SCREEN ---
   if (loading) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh", color: "#555", fontFamily: "sans-serif" }}>
-        <h3>Initializing AI Financial Model...</h3>
+      <div style={styles.loadingOverlay}>
+        <div style={{
+          width: "50px", height: "50px", border: "5px solid #f3f3f3", 
+          borderTop: "5px solid #3b82f6", borderRadius: "50%", 
+          animation: "spin 1s linear infinite"
+        }}>
+          <style>{`
+            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+            @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+          `}</style>
+        </div>
+        <h2 style={styles.loadingText}>AI Tool is getting ready...</h2>
       </div>
     );
   }
 
-  if (error) {
-    return (
-      <div style={{ color: "red", padding: "40px", fontFamily: "sans-serif" }}>
-        <h3>Error loading data.</h3>
-        <p>Is the backend running at <code>{backendUrl}</code>?</p>
-        <pre>{error.message}</pre>
-      </div>
-    );
-  }
+  if (error) return <div style={{padding: 20, color: 'red'}}>Error: {error.message}</div>;
 
   return (
-    <div style={{ padding: "20px", height: "100vh", boxSizing: "border-box", fontFamily: "sans-serif" }}>
-      <h2 style={{ margin: "0 0 20px 0", color: "#111827" }}>Real Estate AI Planner</h2>
-      <div style={{ height: "calc(100% - 60px)" }}>
-        <Dashboard initialFeatures={loadedFeatures} backendUrl={backendUrl} />
-      </div>
-    </div>
+    <Dashboard initialFeatures={features} backendUrl={backendUrl} />
   );
 }
 

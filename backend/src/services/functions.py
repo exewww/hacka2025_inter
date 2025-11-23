@@ -187,7 +187,7 @@ def generate_initial_plot_features(p_info, prop_features, expenses, context):
         }
     return final_output
 
-def generate_purchase_suggestions(p_info, expenses, plot_features, info_var):
+def generate_purchase_suggestions(p_info, expenses, plot_features, info_var, users_intro_letter='', old_miles=''):
     
     # --- 1. FINANZ-CHECK (Hard Data) ---
     net_income = p_info.get("Net Monthly Income", 0)
@@ -227,6 +227,7 @@ def generate_purchase_suggestions(p_info, expenses, plot_features, info_var):
         "Then, predict the outcome on 2-3 of the 'Enabled Targets'. "
         "Constraint: Keep impact bullets extremely short (max 6 words)."
         "Output: Valid JSON only."
+        "The new suggestions should take the user letter and old milestones into account."
     )
 
     data_input = f"""
@@ -239,8 +240,9 @@ def generate_purchase_suggestions(p_info, expenses, plot_features, info_var):
     CURRENT VALUE: {current_real} (Slider: {current_norm})
     
     --- CONTEXT ---
-    SCALING RULES: 
-    {get_scaling_text_for_llm()}
+    SCALING RULES: {get_scaling_text_for_llm()}
+    VERY IMPORATNAT USER LETTER: {users_intro_letter}
+    VERY IMPORTANT OLD MILESTONES: {json.dumps(old_miles)}
     
     ENABLED TARGETS (Choose 2-3 to influence):
     {json.dumps(enabled_targets)}
@@ -252,8 +254,8 @@ def generate_purchase_suggestions(p_info, expenses, plot_features, info_var):
     {{
         "action_headline": "Concrete suggestion (e.g. Increase Savings to 800€)",
         "impact_bullets": [
-            "Short mathematical impact on Target A via Formula (max 1 sentence)",
-            "Short mathematical impact on Target B via Formula (max 1 sentence)"
+            "Short impact on Target A (max 6 words)",
+            "Short impact on Target B (max 6 words)"
         ]
     }}
     """
@@ -264,14 +266,8 @@ def generate_purchase_suggestions(p_info, expenses, plot_features, info_var):
         # API CALL (Ersetze dies durch deinen echten Call)
         response_text = call_gemini_flash(system_prompt, data_input)
         
-        # CLEANING 1: Remove Markdown
+        # CLEANING
         cleaned = re.sub(r"```json|```", "", response_text).strip()
-        
-        # CLEANING 2: Fix invalid backslashes (The critical fix)
-        # This doubles any backslash that isn't part of a valid JSON escape sequence
-        cleaned = re.sub(r'\\(?![/u"\\bfnrt])', r'\\\\', cleaned)
-
-        # Parse and return the data object
         data = json.loads(cleaned)
         headline = data.get("action_headline", "")
         bullets = data.get("impact_bullets", [])
@@ -283,9 +279,12 @@ def generate_purchase_suggestions(p_info, expenses, plot_features, info_var):
         return final_string
 
     except Exception as e:
-        print(f"Error parsing Gemini response: {e}")
-        # Return your fallback list here if needed
-        return []
+        print(f"Error: {e}")
+        # Fallback
+        return {
+            "action_headline": f"Adjust {info_var} carefully.",
+            "impact_bullets": ["Check your disposable income", "Consider long-term goals"]
+        }
 
 def generate_milestone_plan(p_info, expenses, plot_features, users_intro_letter):
     """
@@ -759,7 +758,8 @@ def generate_detailed_capital_series(p_info, expenses, plot_features, milestones
     1.  Promotion = +500, Job Loss = -2000
     2. Be realistic. A car is ~15k-30k. A wedding ~10k-20k.
     3. Values should be dramastic. its for visuallization purpose
-    4. Every loss is at least 50000 euro
+    4. Every loss is at least 15000 euro
+    5. Maximal overall Capital should not be higher than 40000!!!!!
     
     OUTPUT JSON FORMAT (List of objects in same order):
     [
@@ -774,7 +774,7 @@ def generate_detailed_capital_series(p_info, expenses, plot_features, milestones
     
     try:
         response = call_gemini_flash(system_prompt, data_input)
-        cleaned = re.sub(r"json|", "", response).strip()
+        cleaned = re.sub(r"```json|```", "", response).strip()
         impact_list = json.loads(cleaned)
         
         # In eine Map umwandeln für schnellen Zugriff

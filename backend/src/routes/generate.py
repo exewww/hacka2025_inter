@@ -26,8 +26,10 @@ def generate_suggestion():
     data = request.get_json()
     clicked_feature = data.get("clickedFeature")
     features = data.get("features", {})
+    milestones = data.get("milestones", [])
+    letter = data.get("letter", "")
 
-    suggestion_text = generate_purchase_suggestions(personal_info, current_fixed_expenses, features, clicked_feature)
+    suggestion_text = generate_purchase_suggestions(personal_info, current_fixed_expenses, features, clicked_feature,letter,milestones)
 
     return jsonify({"suggestion": suggestion_text})
     
