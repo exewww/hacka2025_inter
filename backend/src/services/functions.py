@@ -269,12 +269,23 @@ def generate_purchase_suggestions(p_info, expenses, plot_features, info_var, use
         # CLEANING
         cleaned = re.sub(r"```json|```", "", response_text).strip()
         data = json.loads(cleaned)
-        headline = data.get("action_headline", "")
+        headline = data.get("action_headline", "").strip()
         bullets = data.get("impact_bullets", [])
 
-        # Create a nice string with newlines and bullet points
-        text_body = f"{headline}\n" + "\n".join([f"- {b}" for b in bullets])
-        bullets_text = ".  -> ".join(bullets)
+        # --- NEW FORMATTING LOGIC ---
+        
+        # 1. Add a dot to the headline if it's missing
+        if headline and not headline.endswith(('.', '!', '?')):
+            headline += "."
+
+        # 2. Join bullets with a comma and space
+        bullets_text = ", ".join(bullets)
+        
+        # 3. Ensure the bullet text ends with a dot
+        if bullets_text and not bullets_text.endswith('.'):
+            bullets_text += "."
+
+        # Combine: Headline + Newline + Flowing Text
         final_string = f"{headline}\n{bullets_text}"
         return final_string
 
@@ -335,9 +346,10 @@ def generate_milestone_plan(p_info, expenses, plot_features, users_intro_letter)
 
     if years_float < 0.5:
         return [
-            {"time": start_str, "milestone": "Planung gestartet", "difficulty": 0.1, "reason": "Tool Start", "capital": int(current_equity)},
-            {"time": end_str, "milestone": "Sofortkauf", "difficulty": 0.9, "reason": "Sofortige Umsetzung", "capital": int(current_equity)}
+            {"time": start_str, "milestone": "Planning started", "difficulty": 0.1, "reason": "Tool launch", "capital": int(current_equity)},
+            {"time": end_str, "milestone": "Instant purchase", "difficulty": 0.9, "reason": "Immediate execution", "capital": int(current_equity)}
         ]
+
 
     # --- 3. LLM PROMPT (Unverändert) ---
     
@@ -389,7 +401,7 @@ def generate_milestone_plan(p_info, expenses, plot_features, users_intro_letter)
     
     final_plan = [{
         "time": start_str,
-        "milestone": "Planung gestartet",
+        "milestone": "Planning started",
         "difficulty": 0.0,
         "reason": "Start",
         "capital": int(current_equity) # Hier ist jetzt der richtige Wert
@@ -411,11 +423,12 @@ def generate_milestone_plan(p_info, expenses, plot_features, users_intro_letter)
     
     final_plan.append({
         "time": end_str,
-        "milestone": "Immobilienkauf & Einzug",
+        "milestone": "Property purchase & move-in",
         "difficulty": 0.9,
-        "reason": "Ziel erreicht",
+        "reason": "Goal achieved",
         "capital": int(final_capital)
     })
+
 
     return final_plan
 

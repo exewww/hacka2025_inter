@@ -1,3 +1,5 @@
+
+
 import os
 import json
 import asyncio
@@ -16,7 +18,8 @@ from telegram.error import NetworkError
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("Telegram_Bot_Token")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-TARGET_CHAT_ID = os.getenv("Target_Chat_ID")  
+# Ensure ID is an integer
+TARGET_CHAT_ID = int(os.getenv("Target_Chat_ID")) if os.getenv("Target_Chat_ID") else None
 
 if not TELEGRAM_TOKEN or not GEMINI_API_KEY:
     raise ValueError("Missing API Keys!")
@@ -30,9 +33,9 @@ try:
     from functions import generate_milestone_plan, update_milestones_logic
 except ImportError:
     print("⚠️  Make sure user_profile.py and functions.py are in the folder!")
-    # Dummy fallbacks for testing if files missing
     personal_info = {}; current_fixed_expenses = {}; plot_features = {}
     def generate_milestone_plan(*args): return []
+    def update_milestones_logic(*args): return {}
 
 # --- INITIALIZATION ---
 print("--- Loading Whisper... ---")
@@ -40,7 +43,7 @@ stt_model = whisper.load_model("base")
 
 print("--- Calculating Plan... ---")
 users_intro_letter = "I want to buy a flat in Berlin. I am saving aggressively." 
-initial_milestones = generate_milestone_plan(personal_info, current_fixed_expenses, plot_features, users_intro_letter) ###### HERE
+initial_milestones = generate_milestone_plan(personal_info, current_fixed_expenses, plot_features, users_intro_letter)
 
 CURRENT_STATE = {
     "p_info": personal_info,
@@ -62,106 +65,101 @@ def generate_checkin_script(milestones):
     except:
         return f"Checking in: Did you reach {next_mile['milestone']}?"
 
-
 # --- SHARED CHECK-IN FUNCTION ---
-# This works for both the Timer and the /trigger command
-async def execute_checkin_logic(bot, chat_id):
+# Updated to accept custom text and custom voice
+async def execute_checkin_logic(bot, chat_id, custom_text=None, voice="en-US-AriaNeural"):
     print(f"--- Triggering Check-in for {chat_id} ---")
     
-    # 1. Generate Script
-    script = generate_checkin_script(CURRENT_STATE['milestones'])
+    # 1. Determine Script (Custom vs Generated)
+    if custom_text:
+        script = custom_text
+    else:
+        script = generate_checkin_script(CURRENT_STATE['milestones'])
     
     # 2. Send Text
     await bot.send_message(chat_id=chat_id, text=f"📞 *CHECK-IN*:\n\n{script}", parse_mode="Markdown")
     
     # 3. Send Voice
+    # en-US-GuyNeural is a standard, energetic Male voice
+    # en-US-ChristopherNeural is a deeper Male voice
     audio_file = f"checkin_{chat_id}.mp3"
-    communicate = edge_tts.Communicate(script, "en-US-AriaNeural")
-    await communicate.save(audio_file)
     
     try:
+        communicate = edge_tts.Communicate(script, voice)
+        await communicate.save(audio_file)
+        
         with open(audio_file, "rb") as f:
             await bot.send_voice(chat_id=chat_id, voice=f)
     except Exception as e:
         print(f"Audio send failed: {e}")
-        
-    if os.path.exists(audio_file): os.remove(audio_file)
+    finally:
+        if os.path.exists(audio_file): os.remove(audio_file)
 
 # --- TELEGRAM HANDLERS ---
 
-# 1. The Command Wrapper
+# 1. The Command Wrapper (Manual Trigger)
 async def trigger_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Just call the shared logic
+    # Uses default female voice and AI generated script
     await execute_checkin_logic(context.bot, update.effective_chat.id)
 
-# 2. The Auto-Timer Wrapper
+# 2. The Auto-Timer Wrapper (The First 10s Call)
 async def auto_trigger_task(app):
     print("⏳ Waiting 10 seconds to trigger call...")
     await asyncio.sleep(10)
-    # Check if user put their ID in
-    if TARGET_CHAT_ID == 123456789:
-        print("❌ ERROR: Please update TARGET_CHAT_ID at the top of the script to receive the auto-call!")
+    
+    if not TARGET_CHAT_ID:
+        print("❌ ERROR: Please update TARGET_CHAT_ID in .env to receive the auto-call!")
         return
-    await execute_checkin_logic(app.bot, TARGET_CHAT_ID)
+
+    # --- CUSTOM INTRO SCRIPT ---
+    intro_script = "Hi! I'm from Interhyp! Wanted to ask how the plans are going! Still on track? Have you finished your university as planned?"
+    
+    # Use Male Voice (Guy) for energy
+    await execute_checkin_logic(
+        app.bot, 
+        TARGET_CHAT_ID, 
+        custom_text=intro_script, 
+        voice="en-US-GuyNeural" 
+    )
 
 async def post_init(application: Application):
-    # This runs right before polling starts
     asyncio.create_task(auto_trigger_task(application))
 
-# 3. Response Handler
-# ... existing imports ...
-
+# 3. Response Handler (With Async Fix)
 async def handle_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global CURRENT_STATE
     user_id = update.effective_chat.id
-    loop = asyncio.get_running_loop() # Get the current event loop
+    loop = asyncio.get_running_loop() # Get event loop for background task
     
     user_text = ""
-    
     if update.message.voice:
-        # Use 'TYPING' or 'UPLOAD_VOICE' action to let user know bot is thinking
         await context.bot.send_chat_action(chat_id=user_id, action=ChatAction.TYPING)
-        
         f_path = f"user_{user_id}.ogg"
+        
         try:
             f = await update.message.voice.get_file()
             await f.download_to_drive(f_path)
             
-            # --- CRITICAL FIX HERE ---
-            # Run the heavy Whisper blocking task in a separate thread
-            print(f"🎙️ Transcribing audio for {user_id}...")
-            
-            # We use a lambda to pass arguments to the blocking function
-            transcription_result = await loop.run_in_executor(
-                None, 
-                lambda: stt_model.transcribe(f_path)
-            )
-            user_text = transcription_result["text"]
-            # -------------------------
+            # FIX: Run Whisper in background thread to prevent blocking
+            print("🎙️ Processing audio...")
+            transcription = await loop.run_in_executor(None, lambda: stt_model.transcribe(f_path))
+            user_text = transcription["text"]
             
         except Exception as e:
-            print(f"❌ Error processing audio: {e}")
-            await update.message.reply_text("Sorry, I couldn't hear that clearly.")
-            if os.path.exists(f_path): os.remove(f_path)
-            return # Stop processing
+            print(f"Audio Error: {e}")
+            await update.message.reply_text("Sorry, audio error.")
+            return
         finally:
-            # Clean up file
             if os.path.exists(f_path): os.remove(f_path)
-
+            
     else:
         await context.bot.send_chat_action(chat_id=user_id, action=ChatAction.TYPING)
         user_text = update.message.text
 
     print(f"--- User Update: {user_text}")
 
-    # Check if text is empty (e.g., silent audio)
-    if not user_text or user_text.strip() == "":
-        await update.message.reply_text("I didn't catch any text in that message.")
-        return
+    if not user_text: return
 
-    # Run your business logic
-    # (Note: If update_milestones_logic calls Gemini and takes >30s, 
-    # you might want to wrap that in run_in_executor too, but usually it's fast enough)
     result = update_milestones_logic(CURRENT_STATE['p_info'], CURRENT_STATE['expenses'], CURRENT_STATE['milestones'], user_text)
 
     if result:
@@ -176,26 +174,18 @@ async def handle_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Roadmap
         roadmap = "\n".join([f"🔹 *{m['time']}*: {m['milestone']}" for m in CURRENT_STATE['milestones']])
-        if roadmap: 
-            await update.message.reply_text(f"📅 *Updated Plan:*\n{roadmap}", parse_mode="Markdown")
-        else: 
-            await update.message.reply_text("🎉 All milestones done!")
+        if roadmap: await update.message.reply_text(f"📅 *Updated Plan:*\n{roadmap}", parse_mode="Markdown")
+        else: await update.message.reply_text("🎉 All milestones done!")
 
-        # Audio Reply
+        # Audio Reply (Keeping default female for replies, or change to Guy here too)
         a_file = f"reply_{user_id}.mp3"
+        # Using Guy here too for consistency? Or change back to "en-US-AriaNeural"
+        await edge_tts.Communicate(reply, "en-US-GuyNeural").save(a_file)
         try:
-            # Generate audio
-            await edge_tts.Communicate(reply, "en-US-AriaNeural").save(a_file)
-            
-            # Send audio
-            with open(a_file, "rb") as f: 
-                await update.message.reply_voice(voice=f)
-        except Exception as e: 
-            print(f"❌ Error sending reply audio: {e}")
-        finally:
-            if os.path.exists(a_file): os.remove(a_file)
+            with open(a_file, "rb") as f: await update.message.reply_voice(voice=f)
+        except: pass
+        if os.path.exists(a_file): os.remove(a_file)
 
-            
 # --- MAIN ---
 if __name__ == "__main__":
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -203,7 +193,6 @@ if __name__ == "__main__":
     
     print("Starting Bot...")
     
-    # We add post_init here
     app = Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", lambda u,c: u.message.reply_text(f"ID: {u.effective_chat.id}")))
