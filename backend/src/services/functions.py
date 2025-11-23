@@ -684,3 +684,160 @@ def update_milestones_logic(p_info, expenses, old_miles, user_msg):
         "updated_expenses": new_expenses,
         "new_milestones": final_plan
     }
+
+
+
+
+
+
+
+
+from dateutil.relativedelta import relativedelta # Falls vorhanden, sonst manuell
+
+def add_months(sourcedate, months):
+    month = sourcedate.month - 1 + months
+    year = sourcedate.year + month // 12
+    month = month % 12 + 1
+    return datetime(year, month, 1)
+
+def generate_detailed_capital_series(p_info, expenses, plot_features, milestones,letter):
+    """
+    Erstellt eine monatliche Kapital-Kurve (Array) für Diagramme.
+    1. LLM schätzt Kosten/Gewinne der Meilensteine.
+    2. Python berechnet den Kontostand Monat für Monat.
+    """
+    
+    # --- 1. BASIS-DATEN ---
+    net_income = p_info.get("Net Monthly Income", 0)
+    bonus_annual = p_info.get("Bonus/Variable Income (Annual)", 0)
+    start_equity = p_info.get("Total Savings / Equity", 0)
+    
+    total_expenses = sum(v for v in expenses.values() if isinstance(v, (int, float)))
+    
+    # Basis-Sparrate pro Monat
+    base_monthly_saving = (net_income - total_expenses) + (bonus_annual / 12.0)
+    
+    # Zeitrahmen bestimmen (aus den Milestones oder Plot Features)
+    # Wir nehmen den ersten und letzten Meilenstein als Anker
+    try:
+        start_str = milestones[0]["time"]
+        end_str = milestones[-1]["time"]
+        start_date = datetime.strptime(start_str, "%m/%Y")
+        end_date = datetime.strptime(end_str, "%m/%Y")
+    except:
+        # Fallback, falls Milestones fehlen
+        return []
+
+    # --- 2. LLM: FINANZ-IMPACT ANALYSE ---
+    # Wir fragen das LLM: "Was kostet dieses Event einmalig? Ändert es das Einkommen?"
+    
+    system_prompt = (
+        "You are a Financial Auditor. Analyze life events for financial impact. "
+        "Output ONLY valid JSON."
+    )
+    
+    # Wir senden nur die Meilensteine, die nicht "Start" oder "Ende" sind, 
+    # da Start/Ende meist reine Status-Updates sind. 
+    # Oder wir senden alle, falls "Hauskauf" Kosten verursacht (Kaufnebenkosten?).
+    # Senden wir lieber alle zur Analyse.
+    
+    milestone_titles = [m.get("milestone") for m in milestones]
+    
+    data_input = f"""
+    CONTEXT: User earns {net_income}€ net/month. Savings: {start_equity}€.
+    
+    TASK: Estimate financial impact for these milestones:
+    {json.dumps(milestone_titles)}
+    
+    Letter: {letter}
+    RULES:
+    1. Most important thing beyond all, is the letter.
+    2. Extract the years of the events of the letter
+    3. Check if they have positive or negative impact on the capital and check their vallue
+    4. Ignore the "Start" event (Impact 0).
+        Examples:
+    1.  Promotion = +500, Job Loss = -2000
+    2. Be realistic. A car is ~15k-30k. A wedding ~10k-20k.
+    3. Values should be dramastic. its for visuallization purpose
+    4. Every loss is at least 50000 euro
+    
+    OUTPUT JSON FORMAT (List of objects in same order):
+    [
+        {{ "milestone": "...", "one_time_impact": -15000, "monthly_income_delta": 0 }},
+        ...
+    ]
+    """
+    
+    print("--- Analyzing Milestone Financial Impact via LLM ---")
+    
+    impact_map = {} # Key: Milestone Name, Val: Dict
+    
+    try:
+        response = call_gemini_flash(system_prompt, data_input)
+        cleaned = re.sub(r"json|", "", response).strip()
+        impact_list = json.loads(cleaned)
+        
+        # In eine Map umwandeln für schnellen Zugriff
+        for item in impact_list:
+            impact_map[item["milestone"]] = item
+            
+    except Exception as e:
+        print(f"LLM Impact Analysis failed: {e}")
+        # Map bleibt leer -> keine Extra-Kosten
+        
+    # --- 3. PYTHON: MONATLICHE ITERATION ---
+    
+    monthly_series = []
+    
+    current_date = start_date
+    current_capital = float(start_equity)
+    current_saving_rate = float(base_monthly_saving)
+    
+    # Mapping Datum -> Milestone(s) (falls mehrere im gleichen Monat)
+    date_to_milestone = {}
+    for m in milestones:
+        date_to_milestone[m["time"]] = m["milestone"]
+
+    while current_date <= end_date:
+        
+        date_str = current_date.strftime("%m/%Y")
+        event_name = date_to_milestone.get(date_str, None)
+        
+        month_impact = 0
+        income_change = 0
+        
+        # 1. Prüfen, ob in DIESEM Monat ein Event ist
+        if event_name:
+            # Impact aus LLM Daten holen
+            impact_data = impact_map.get(event_name, {})
+            month_impact = float(impact_data.get("one_time_impact", 0))
+            income_change = float(impact_data.get("monthly_income_delta", 0))
+        
+        # 2. Kapital berechnen
+        # Zuerst die Sparrate dieses Monats addieren
+        current_capital += current_saving_rate
+        
+        # Dann einmalige Kosten abziehen / Gewinne addieren
+        current_capital += month_impact
+        
+        # Dann Sparrate für ZUKUNFT anpassen
+        current_saving_rate += income_change
+        
+        # 3. Datenpunkt speichern
+        data_point = {
+            "date": date_str,
+            "capital": int(current_capital),
+            "event": event_name, # Kann None sein
+            "monthly_flow": int(current_saving_rate)
+        }
+        
+        # Optional: Wenn ein Event da war, fügen wir den Impact für Tooltips im Frontend hinzu
+        if event_name:
+            data_point["impact_value"] = int(month_impact)
+            
+        monthly_series.append(data_point)
+        
+        # Einen Monat weiter
+        current_date = add_months(current_date, 1)
+        
+    return monthly_series

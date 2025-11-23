@@ -51,3 +51,25 @@ def generate_milestones():
     )
     
     return jsonify({"milestones": milestones})
+# ✅ NEW ROUTE FOR CAPITAL SERIES
+@generate_bp.route("/generate_capital_series", methods=["POST"])
+def generate_capital_series():
+    data = request.get_json()
+    
+    # Extract data coming from the frontend
+    plot_features = data.get("features", {})
+    milestones = data.get("milestones", [])
+    letter = data.get("letter", "")
+
+
+    # Call the detailed capital series function
+    # personal_info and current_fixed_expenses come from src.services.user_profile
+    series_data = generate_detailed_capital_series(
+        personal_info,
+        current_fixed_expenses,
+        plot_features,
+        milestones,
+        letter
+    )
+    
+    return jsonify({"capital_series": series_data})

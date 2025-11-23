@@ -13,33 +13,28 @@ import { useMilestones } from "./hooks/useMilestones";
 // --- INNER COMPONENT (Wrapped in memo) ---
 const Dashboard = memo(({ initialFeatures, backendUrl }) => {
   
-  // 1. HARDCODED START YEAR
   const START_YEAR = 2025;
 
-  // 2. UI State
+  // UI State
   const [inputValue, setInputValue] = useState("");
   
-  // Keep a ref of inputValue so callbacks can read it without adding it to dependency arrays
+  // ✅ NEW STATE: Detailed Capital Series Data
+  const [capitalSeries, setCapitalSeries] = useState([]); 
+
   const inputValueRef = useRef(inputValue);
   useEffect(() => { inputValueRef.current = inputValue; }, [inputValue]);
 
-  // 3. Initialize Milestones Hook
+  // Initialize Milestones Hook
   const { milestones, fetchMilestones, isLoadingMilestones } = useMilestones(backendUrl);
 
-  // --- GUARD REF: Tracks if the initial 'on-mount' generation is done ---
   const hasInitialized = useRef(false);
 
-  // 4. Define Callback: Triggered ONLY when Chart interaction finishes
   const handleFeaturesUpdated = useCallback((updatedFeatures) => {
-    // Prevent the chart from triggering an update BEFORE 
-    // the initialization useEffect has run.
     if (!hasInitialized.current) return;
-
     console.log("Plot changed (user interaction), regenerating milestones...");
     fetchMilestones(inputValueRef.current, updatedFeatures);
   }, [fetchMilestones]);
 
-  // 5. Initialize Feature Logic
   const { features, updateFeatureValue, toggleFeatureEnabled, progress } =
     useFeaturePoints(
       initialFeatures, 
@@ -47,43 +42,61 @@ const Dashboard = memo(({ initialFeatures, backendUrl }) => {
       handleFeaturesUpdated 
     );
 
-  // 6. INITIALIZATION EFFECT (Runs exactly ONCE)
+  // 1. Initial Data Fetch
   useEffect(() => {
     if (!hasInitialized.current) {
       console.log("Initial Milestone Generation (One-time on mount)...");
       fetchMilestones(inputValueRef.current, features);
-      
-      // Mark as done. Now the handleFeaturesUpdated callback is allowed to run.
       hasInitialized.current = true;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
 
-  // 7. Calculate Start Capital (FIXED)
-  // Checks multiple key variations (with space, without space, camelCase)
-  const rawCapital = 
-    features["Initial Capital"]?.value || 
-    features["InitialCapital"]?.value || 
-    features["initialCapital"]?.value || 
-    0;
+  // ✅ NEW: 2. Fetch Capital Series whenever Milestones change
+  useEffect(() => {
+    if (milestones.length > 0) {
+      const fetchCapitalData = async () => {
+        try {
+          const response = await fetch(`${backendUrl}/generate_capital_series`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              features: features,
+              milestones: milestones,
+              letter: inputValueRef.current,
+              
+            })
+          });
+          const data = await response.json();
+          
+          if(data.capital_series) {
+            // ✅ LOG DATA HERE to verify format and values
+            console.log("📊 Capital Series Data Received:", data.capital_series);
+            
+            setCapitalSeries(data.capital_series);
+          }
+        } catch (e) {
+          console.error("Error fetching capital series:", e);
+        }
+      };
+      fetchCapitalData();
+    }
+  }, [milestones, features, backendUrl]);
 
-  const startCapital = rawCapital * 1000000; 
-
-  // 8. Initialize Suggestion Hook
+  // Suggestion Hook
   const [suggestion, requestSuggestion] = useSuggestion(
     "Click on a point to get specific advice...",
     backendUrl,
     features
   );
 
-  // 9. Resize / Layout Logic
+  // Layout / Resizing Logic
   const [leftWidth, setLeftWidth] = useState(40); 
   const containerRef = useRef(null);
   const isDragging = useRef(false);
   const [chartWidth, setChartWidth] = useState(600);
   const chartHeight = 300;
 
-  // (Optional) Manual Trigger via Send Button
   const handleSendClick = () => {
     fetchMilestones(inputValue, features);
   };
@@ -138,7 +151,7 @@ const Dashboard = memo(({ initialFeatures, backendUrl }) => {
                 {milestones.map((m, i) => (
                   <li key={i} style={{ marginBottom: "8px" }}>
                     <strong>{m.time}</strong>: {m.milestone} <br/>
-                    <span style={{ color: "#666", fontSize: "12px" }}>(Diff: {m.difficulty}) - {m.reason}</span>
+                    <span style={{ color: "#666", fontSize: "12px" }}>(Diff: {m.difficulty})</span>
                   </li>
                 ))}
               </ul>
@@ -164,6 +177,7 @@ const Dashboard = memo(({ initialFeatures, backendUrl }) => {
           <div style={{ width: `${progress}%`, height: "100%", background: "#2563eb", borderRadius: "3px", transition: "width 0.2s ease-out" }} />
         </div>
 
+        {/* Top Chart (Feature Sliders) */}
         <InteractiveLineChart
           width={chartWidth}
           height={chartHeight}
@@ -173,12 +187,15 @@ const Dashboard = memo(({ initialFeatures, backendUrl }) => {
           onPointClick={requestSuggestion}
         />
 
+        {/* Bottom Chart (Financial Roadmap) */}
         <InteractiveTimeLineChart
           width={chartWidth}
           height={chartHeight}
           startYear={START_YEAR}
-          milestones={milestones}
-          initialCapital={startCapital}
+          
+          milestones={milestones}      // Fallback / Annotation data
+          seriesData={capitalSeries}   // ✅ PASS DETAILED SERIES
+          
           onValueChange={updateFeatureValue} 
           onToggleEnabled={toggleFeatureEnabled}
           onPointClick={requestSuggestion} 
