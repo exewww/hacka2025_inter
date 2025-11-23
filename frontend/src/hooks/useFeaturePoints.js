@@ -1,82 +1,97 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 
-/**
- * initialValues: { featureName: { value: 0..1, enabled: boolean } }
- * backendUrl: backend endpoint for generating new values
- */
-export function useFeaturePoints(initialValues, backendUrl, debounceTime = 5000) {
+// Added onFeaturesUpdated parameter
+export function useFeaturePoints(initialValues, backendUrl, onFeaturesUpdated, debounceTime = 2000) {
   const [features, setFeatures] = useState(initialValues);
   const [progress, setProgress] = useState(0);
+
   const timerRef = useRef(null);
   const progressRef = useRef(null);
+  const previousRef = useRef(initialValues);
 
-  // Call backend
-  const updateBackend = useCallback(async (featuresToSend) => {
-    try {
-      const response = await fetch(backendUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ features: featuresToSend }),
-      });
-      const data = await response.json();
-      if (data.features) {
-        // Merge backend values with local enabled flags
-        setFeatures(prev => {
-          const merged = {};
-          for (const key of Object.keys(prev)) {
-            merged[key] = {
-              value: data.features[key]?.value ?? prev[key].value,
-              enabled: prev[key].enabled // keep local lock state
-            };
-          }
-          return merged;
-        });
-      }
-      setProgress(0);
-    } catch (err) {
-      console.error("Backend update failed:", err);
-    }
-  }, [backendUrl]);
-
-  // Debounce logic
-const startDebounce = useCallback(() => {
-  if (timerRef.current) clearTimeout(timerRef.current);
-  if (progressRef.current) clearInterval(progressRef.current);
-
-  setProgress(0);
-  let elapsed = 0;
-
-  progressRef.current = setInterval(() => {
-    elapsed += 100;
-    setProgress(Math.min(100, (elapsed / debounceTime) * 100));
-  }, 100);
-
-  timerRef.current = setTimeout(() => {
-    setFeatures(prevFeatures => {
-      const featuresToSend = {};
-      for (const key in prevFeatures) {
-        featuresToSend[key] = {
-          value: prevFeatures[key].value,
-          enabled: prevFeatures[key].enabled
+  const updateBackend = useCallback(
+    async (newFeatures) => {
+      const prevSnapshot = previousRef.current;
+      const payload = {};
+      
+      for (const key of Object.keys(newFeatures)) {
+        payload[key] = {
+          value: newFeatures[key].value,
+          enabled: newFeatures[key].enabled,
+          previous_value: prevSnapshot[key]?.value ?? newFeatures[key].value,
         };
       }
 
-      updateBackend(featuresToSend);
-      return prevFeatures; // don't change state here
-    });
+      console.log("🚀 Sending payload to backend:", payload);
 
-    clearInterval(progressRef.current);
-    progressRef.current = null;
-    timerRef.current = null;
-    setProgress(0);
-  }, debounceTime);
-}, [debounceTime, updateBackend]);
+      try {
+        const response = await fetch(backendUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ features: payload }),
+        });
 
-  // Update value → triggers backend
+        const data = await response.json();
+
+        if (data.features) {
+          setFeatures((prevLocal) => {
+            const merged = {};
+            for (const key of Object.keys(prevLocal)) {
+              merged[key] = {
+                ...prevLocal[key],
+                value: data.features[key]?.value ?? prevLocal[key].value,
+                enabled: prevLocal[key].enabled,
+              };
+            }
+            
+            previousRef.current = merged;
+            
+            // --- NEW: Trigger the external callback (Generate Milestones) ---
+            if (onFeaturesUpdated) {
+               onFeaturesUpdated(merged);
+            }
+            
+            return merged;
+          });
+        }
+
+        setProgress(0);
+      } catch (err) {
+        console.error("Backend update failed:", err);
+        setProgress(0);
+      }
+    },
+    [backendUrl, onFeaturesUpdated] // Added onFeaturesUpdated to dependencies
+  );
+
+  const startDebounce = useCallback(
+    (updatedState) => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (progressRef.current) clearInterval(progressRef.current);
+
+      setProgress(0);
+      let elapsed = 0;
+
+      progressRef.current = setInterval(() => {
+        elapsed += 100;
+        setProgress(Math.min(100, (elapsed / debounceTime) * 100));
+      }, 100);
+
+      timerRef.current = setTimeout(() => {
+        updateBackend(updatedState);
+        clearInterval(progressRef.current);
+        progressRef.current = null;
+        timerRef.current = null;
+        setProgress(0);
+      }, debounceTime);
+    },
+    [debounceTime, updateBackend]
+  );
+
   const updateFeatureValue = useCallback(
-    (featureName, value) => {
-      setFeatures(prev => {
-        const next = { ...prev, [featureName]: { ...prev[featureName], value } };
+    (name, value) => {
+      setFeatures((prev) => {
+        const next = { ...prev, [name]: { ...prev[name], value } };
         startDebounce(next);
         return next;
       });
@@ -84,16 +99,12 @@ const startDebounce = useCallback(() => {
     [startDebounce]
   );
 
-  // Toggle enabled → frontend only
-  const toggleFeatureEnabled = useCallback(
-    (featureName) => {
-      setFeatures(prev => ({
-        ...prev,
-        [featureName]: { ...prev[featureName], enabled: !prev[featureName].enabled }
-      }));
-    },
-    []
-  );
+  const toggleFeatureEnabled = useCallback((name) => {
+    setFeatures((prev) => ({
+      ...prev,
+      [name]: { ...prev[name], enabled: !prev[name].enabled },
+    }));
+  }, []);
 
   useEffect(() => {
     return () => {
