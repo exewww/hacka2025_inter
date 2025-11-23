@@ -1,27 +1,29 @@
-import { useState, useEffect } from "react";
+// useSuggestion.js
+import { useState, useCallback } from "react";
+export function useSuggestion(initialText, url, features) {
+  const [suggestion, setSuggestion] = useState(initialText);
 
-export function useSuggestion(initialValue = "suggestion here", url, features) {
-  const [suggestion, setSuggestion] = useState(initialValue);
-
-  useEffect(() => {
-    // Call backend whenever features change
-    async function fetchSuggestion() {
+  const requestSuggestion = useCallback(
+    async (clickedFeature) => {
       try {
-        const response = await fetch(url, {
+        const payload = { clickedFeature, features };
+
+        const res = await fetch(`${url}/generate_suggestion`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(features)
+          body: JSON.stringify(payload),
         });
-        const data = await response.json();
-        // Assume backend returns { suggestion: "..." }
-        setSuggestion(data.suggestion || initialValue);
+
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+
+        const data = await res.json();
+        if (data.suggestion) setSuggestion(data.suggestion);
       } catch (err) {
-        console.error(err);
+        console.error("Suggestion fetch failed", err);
       }
-    }
+    },
+    [features, url]
+  );
 
-    fetchSuggestion();
-  }, [features, url, initialValue]);
-
-  return [suggestion, setSuggestion];
+  return [suggestion, requestSuggestion];
 }

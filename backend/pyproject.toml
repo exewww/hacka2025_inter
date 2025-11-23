@@ -11,7 +11,8 @@ dependencies = [
     "flask",
     "flask-cors",
     "openai",
-    "python-dotenv"
+    "python-dotenv",
+    "google-generativeai (>=0.8.5,<0.9.0)"
 ]
 
 [tool.poetry]

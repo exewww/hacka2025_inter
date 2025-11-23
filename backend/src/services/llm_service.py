@@ -82,4 +82,14 @@ def generate_text(features_input):
         
         features[key]["value"] = round(new_val, 4)
 
-    return features
+    return featuresl
+def generate_suggestion_text(clicked_feature, features):
+    """
+    Generates a text suggestion including value and lock/unlock status.
+    """
+    feature_list = ", ".join(
+        f"{k}: value={v['value']}, enabled={'yes' if v.get('enabled', False) else 'no'}"
+        for k, v in features.items()
+    )
+    suggestion = f"The feature changed is '{clicked_feature}'. All features with values and lock status are: {feature_list}."
+    return suggestion

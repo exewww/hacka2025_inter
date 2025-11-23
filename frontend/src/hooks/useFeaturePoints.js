@@ -1,41 +1,28 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 
-export function useFeaturePoints(initialValues, backendUrl, debounceTime = 5000) {
+// Added onFeaturesUpdated parameter
+export function useFeaturePoints(initialValues, backendUrl, onFeaturesUpdated, debounceTime = 2000) {
   const [features, setFeatures] = useState(initialValues);
   const [progress, setProgress] = useState(0);
 
   const timerRef = useRef(null);
   const progressRef = useRef(null);
-  const previousRef = useRef(initialValues); // <-- store last version for diff
+  const previousRef = useRef(initialValues);
 
-  // Compare previous and current → returns list of changed feature names
-  const getChangedFeatures = (prev, curr) => {
-    const changed = [];
-    for (const key of Object.keys(curr)) {
-      if (prev[key].value !== curr[key].value || prev[key].enabled !== curr[key].enabled) {
-        changed.push(key);
-      }
-    }
-    return changed;
-  };
-
-  // Backend call
   const updateBackend = useCallback(
     async (newFeatures) => {
-      const prev = previousRef.current;
-      const changedKeys = getChangedFeatures(prev, newFeatures);
-
-      // Build payload:
-      // - send all features
-      // - BUT for changed ones → set enabled=false ONLY IN PAYLOAD
+      const prevSnapshot = previousRef.current;
       const payload = {};
+      
       for (const key of Object.keys(newFeatures)) {
-        const wasChanged = changedKeys.includes(key);
         payload[key] = {
           value: newFeatures[key].value,
-          enabled: wasChanged ? false : newFeatures[key].enabled,
+          enabled: newFeatures[key].enabled,
+          previous_value: prevSnapshot[key]?.value ?? newFeatures[key].value,
         };
       }
+
+      console.log("🚀 Sending payload to backend:", payload);
 
       try {
         const response = await fetch(backendUrl, {
@@ -47,31 +34,36 @@ export function useFeaturePoints(initialValues, backendUrl, debounceTime = 5000)
         const data = await response.json();
 
         if (data.features) {
-          // merge backend values but keep local enabled flags
           setFeatures((prevLocal) => {
             const merged = {};
             for (const key of Object.keys(prevLocal)) {
               merged[key] = {
+                ...prevLocal[key],
                 value: data.features[key]?.value ?? prevLocal[key].value,
-                enabled: prevLocal[key].enabled, // don't touch the UI lock status
+                enabled: prevLocal[key].enabled,
               };
             }
+            
+            previousRef.current = merged;
+            
+            // --- NEW: Trigger the external callback (Generate Milestones) ---
+            if (onFeaturesUpdated) {
+               onFeaturesUpdated(merged);
+            }
+            
             return merged;
           });
-
-          // Update previous snapshot AFTER backend accepted it
-          previousRef.current = newFeatures;
         }
 
         setProgress(0);
       } catch (err) {
         console.error("Backend update failed:", err);
+        setProgress(0);
       }
     },
-    [backendUrl]
+    [backendUrl, onFeaturesUpdated] // Added onFeaturesUpdated to dependencies
   );
 
-  // Debounce
   const startDebounce = useCallback(
     (updatedState) => {
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -87,7 +79,6 @@ export function useFeaturePoints(initialValues, backendUrl, debounceTime = 5000)
 
       timerRef.current = setTimeout(() => {
         updateBackend(updatedState);
-
         clearInterval(progressRef.current);
         progressRef.current = null;
         timerRef.current = null;
@@ -97,7 +88,6 @@ export function useFeaturePoints(initialValues, backendUrl, debounceTime = 5000)
     [debounceTime, updateBackend]
   );
 
-  // Updating a feature value triggers debounce
   const updateFeatureValue = useCallback(
     (name, value) => {
       setFeatures((prev) => {
@@ -109,7 +99,6 @@ export function useFeaturePoints(initialValues, backendUrl, debounceTime = 5000)
     [startDebounce]
   );
 
-  // Only local UI toggle
   const toggleFeatureEnabled = useCallback((name) => {
     setFeatures((prev) => ({
       ...prev,
